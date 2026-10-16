@@ -42,6 +42,21 @@ What prior work says about WPP (from research — still to be verified against *
 - **Phones:** Android is available for APK extraction and HCI snoop captures. The iPhone can stay the daily Health Mate phone.
 - **Key experiment (phase 5):** does a local GETALL + SYNC_OK stop the scale's own Wi-Fi upload to Withings? If it does, choose between local-only and pulling without acknowledging.
 
+## Status (2026-10-16)
+
+| Phase | State |
+|---|---|
+| 0–2 Target, tooling, recon | **done**: advertisement, GATT layout and probe documented in `docs/` |
+| 3 Protocol from the app | **done**: session flow, records and advertisement in `docs/protocol.md` |
+| 4 Ground truth | **done differently**: validated against the real scale instead of HCI captures. Readings match the Withings app, and the app still syncs them because we never delete. |
+| 5 Library | **working**: codec, mutual auth, read-only client, `tools/read_measurements.py`. Still missing: multi-user mapping, TIME_SET, packaging. |
+| 6 HA integration | next |
+
+Decided along the way:
+- The scale runs in **Bluetooth mode**. In Wi-Fi mode it has no BLE trigger.
+- `kl` comes from the user's own account (`tools/fetch_kl.py`).
+- The phone app deletes readings after it uploads them, so "first reader wins" (see `docs/recon.md`).
+
 ## Phases
 
 ### 0. Identify the target — done
@@ -94,7 +109,7 @@ Body Smart (WBS13). Firmware version still to note (Health Mate → Devices → 
   - Decide between local-only and both. To keep both, leave the scale in Wi-Fi mode if the model still advertises after a weigh-in (the Body Smart does; the Body+ doesn't).
 - **CLI:** `withings-wpp dump` prints new measurements. Exit: it matches Health Mate's values for several weigh-ins.
 
-### 6. Home Assistant integration `withings_local`
+### 6. Home Assistant integration `withings_local` — next
 - **Manifest:**
   - `bluetooth` matcher on the WITH service-UUID pattern, or on the local name
   - `iot_class: local_push`
