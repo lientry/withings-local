@@ -57,6 +57,13 @@ The scale was switched to Bluetooth mode with the official app (see [user-guide.
 | When | about 18 s after the press | about 60 s after stepping on, i.e. after the measurement finished |
 | Seen | about 15 s | only twice, so the window is short |
 
-Next: connect immediately after a weigh-in, expect `PROBE_CHALLENGE` instead of `PROBE_REPLY`, and read the connect reason.
+### Bluetooth mode: probes
+
+| Session | PROBE answer | Other requests |
+|---|---|---|
+| Button press | `PROBE_REPLY` + `FACTORY_STATE` (00), **no authentication**. `CONNECT_REASON` = 1 (button). | DISCONNECT is acknowledged. |
+| Weigh-in | **`PROBE_CHALLENGE`** (35 bytes: MAC string + 16-byte challenge) | CONNECT_REASON, STORED_MEASURE (action 0) and DISCONNECT all return `CMD_ERROR` −5, "not authenticated". |
+
+Conclusion: reading measurements needs the challenge answered with `kl`. That matches the app analysis in [protocol.md](protocol.md).
 
 Tooling note: macOS kills Bluetooth processes launched by the `claude` CLI (TCC: no usage description). Run Bluetooth tools with `tools/terminal_run.sh`.
