@@ -36,6 +36,8 @@ You need:
    1. Hold the button under the scale for **3 seconds**.
    2. Choose **Pair now**.
    3. Enter the code the scale shows. You have about 30 seconds.
+
+   Afterwards the scale may show **"Setup failed"**. That's expected: it means setup mode ended without the Withings app. The pairing is stored, and the scale keeps working as before.
 5. Weigh in. Within about a minute of the reading finishing, the sensors update.
 
 If the pairing is lost later (for example after a battery change), Home Assistant shows **Reauthentication required** for the integration. Open it and pair again. You can also re-pair at any time with **Reconfigure** from the integration's menu.
