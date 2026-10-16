@@ -1,0 +1,39 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# --- Never publish (see PLAN.md "Publishing rules") ---
+# Secrets: kl keys, tokens, credentials
+secrets/
+.env
+.env.*
+*.kl
+# Raw captures and bug reports (contain MACs, keys, health data)
+captures/
+*.btsnoop
+*.cfa
+*.log.btsnoop
+btsnoop_hci.log*
+bugreport*.zip
+*.pcap
+*.pcapng
+# Withings binaries and decompiled output
+work/
+*.apk
+*.apks
+*.xapk
+*.dex
+*.jdb2
+*.bin
+*.img
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
