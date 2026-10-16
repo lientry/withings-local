@@ -112,3 +112,11 @@ Conclusion so far:
 - Whether a passkey bond changes that is still **untested**. macOS (CoreBluetooth) can't initiate BLE pairing, and the scale never requested it.
 - Testing it needs a central that can start pairing with passkey entry: BlueZ (`bluetoothctl` with a KeyboardDisplay agent) or an ESP32.
 - Even if bonding works, the HA integration would need passkey pairing through HA's Bluetooth stack. HA has no user flow for that today, either for local adapters or for ESPHome proxies.
+
+### SYNC_OK and coexistence with the phone app, verified (2026-10-16)
+
+Back in Bluetooth mode, with the fixed client (SYNC_OK at the end of every session):
+
+1. Weigh-in A, read by us with the phone's Bluetooth off: authenticated, reason 2, one weigh-in, **SYNC_OK acknowledged**.
+2. Weigh-in B, read by us again: the scale **accepted the next connection** and returned **both A and B**. SYNC_OK doesn't delete or hide readings.
+3. Weigh-in C with the phone's Bluetooth on: the Withings app received **A, B and C**. A sync we acknowledged doesn't stop the official app from getting the same readings later.
