@@ -12,9 +12,22 @@ Observations from our own scale (Body Smart, WBS13, in Wi-Fi mode). Raw scans st
 
 Each scan matched on "WITH" service UUIDs (`-5749-5448-`) and on names containing withings/wbs/body/scale.
 
-Open questions:
-- Distance and walls between the Mac and the scale (range).
-- Does this firmware advertise after a weigh-in while in Wi-Fi mode? Prior work reports about 55 s of advertising on the Body Smart.
-- What does the button press do on this model (Bluetooth icon on the display? setup mode?).
+Range was not the problem: the scale was about 1 m from the Mac.
+
+### Timed scan: found it
+
+To tell the scale apart from background devices, the scan first spent 30 s learning the background, then the user short-pressed the button. The scale showed a QR code reading "open withings app", followed by a menu: Info / Update / Reset / Units / Quit.
+
+| Field | Value |
+|---|---|
+| Local name | `Body Smart XX`, where XX is a 2-hex-digit suffix (probably from the MAC) |
+| Advertised service | `00000020-5749-5448-0010-000000000000`, i.e. WPP service `0x20`, model ID `0x0010`; the tail is all zeros, so no MAC is embedded |
+| Manufacturer data | company `0x03FF`, payload `00000000` |
+| Connectable | yes |
+| TX power | 0 dBm |
+| RSSI | −49 dBm at about 1 m |
+| Advertising window | started about 18 s after the press and lasted about 15 s |
+
+Why the first scans missed it: the scale doesn't advertise when idle or after a weigh-in (in Wi-Fi mode, on this firmware). It only advertised briefly once the button menu was open. The earlier scans probably caught nothing because nothing woke the advertising.
 
 Tooling note: macOS kills Bluetooth processes launched by the `claude` CLI (TCC: no usage description). Run Bluetooth tools with `tools/terminal_run.sh`.
