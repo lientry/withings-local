@@ -19,12 +19,13 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
-def service_info(name="Body Smart 55", uuid=INSTALLED_UUID, address=ADDRESS) -> BluetoothServiceInfoBleak:
+def service_info(name="Body Smart 55", uuid=INSTALLED_UUID, address=ADDRESS, mfr=b"\x01\x02\x03\x04") -> BluetoothServiceInfoBleak:
+    uuids = [uuid] if uuid else []
     adv = AdvertisementData(
         local_name=name,
-        manufacturer_data={0x03FF: b"\x01\x02\x03\x04"},
+        manufacturer_data={0x03FF: mfr} if mfr is not None else {},
         service_data={},
-        service_uuids=[uuid],
+        service_uuids=uuids,
         tx_power=0,
         rssi=-60,
         platform_data=(),
@@ -35,7 +36,7 @@ def service_info(name="Body Smart 55", uuid=INSTALLED_UUID, address=ADDRESS) -> 
         rssi=-60,
         manufacturer_data=adv.manufacturer_data,
         service_data={},
-        service_uuids=[uuid],
+        service_uuids=uuids,
         source="local",
         device=BLEDevice(address, name, {}),
         advertisement=adv,

@@ -50,16 +50,22 @@ def latest_weigh_in(groups: list[MeasureGroup]) -> tuple[datetime, dict[str, flo
     return newest.time, values
 
 
+WITHINGS_COMPANY_ID = 0x03FF
+
+
 def has_new_data(service_info: BluetoothServiceInfoBleak) -> bool:
     """True when the scale advertises as an installed device (after a weigh-in).
 
-    In setup/button sessions the UUID tail is all zeros and the scale won't hand out measurements.
+    Two signals, because passive scanners may not receive the scan response:
+    - the service UUID tail carries the scale's MAC (all zeros in setup/button sessions);
+    - the Withings manufacturer data is non-zero (all zeros in setup sessions).
     """
     for uuid in service_info.service_uuids:
         w = WithingsUuid.parse(uuid)
         if w and w.model_id == BODY_SMART_MODEL_ID and w.tail.strip("0"):
             return True
-    return False
+    mfr = service_info.manufacturer_data.get(WITHINGS_COMPANY_ID)
+    return bool(mfr) and any(mfr)
 
 
 class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
@@ -81,11 +87,23 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
 
     @callback
     def _needs_poll(self, service_info: BluetoothServiceInfoBleak, seconds_since_last_poll: float | None) -> bool:
-        if not has_new_data(service_info):
-            return False
-        return seconds_since_last_poll is None or seconds_since_last_poll >= POLL_COOLDOWN_SECONDS
+        new_data = has_new_data(service_info)
+        due = seconds_since_last_poll is None or seconds_since_last_poll >= POLL_COOLDOWN_SECONDS
+        _LOGGER.debug(
+            "%s: advertisement via %s (rssi %s, connectable %s, uuids %d, withings mfr data %s): new data %s, poll due %s",
+            self.title,
+            service_info.source,
+            service_info.rssi,
+            service_info.connectable,
+            len(service_info.service_uuids),
+            "present" if WITHINGS_COMPANY_ID in service_info.manufacturer_data else "absent",
+            new_data,
+            due,
+        )
+        return new_data and due
 
     async def _async_sync(self, service_info: BluetoothServiceInfoBleak) -> ScaleData:
+        _LOGGER.info("%s: weigh-in advertised, connecting via %s", self.title, service_info.source)
         device = bluetooth.async_ble_device_from_address(self.hass, service_info.address, connectable=True)
         client = await establish_connection(
             BleakClientWithServiceCache, device or service_info.device, self.title, max_attempts=3
@@ -111,5 +129,7 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
             data.measured_at is None or latest[0] >= data.measured_at
         ):
             data.measured_at, data.values = latest
-        _LOGGER.debug("%s: read %d group(s), latest %s", self.title, len(result.groups), data.measured_at)
+        _LOGGER.info(
+            "%s: sync done: %d weigh-in(s) stored on the scale, latest %s", self.title, len(result.groups), data.measured_at
+        )
         return data

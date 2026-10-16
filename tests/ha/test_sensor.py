@@ -36,4 +36,11 @@ async def test_sensors_follow_coordinator_and_stay_available(hass: HomeAssistant
     # No reading yet for this one, so it stays unavailable.
     assert hass.states.get("sensor.body_smart_muscle_mass").state == STATE_UNAVAILABLE
 
+    from custom_components.withings_local.diagnostics import async_get_config_entry_diagnostics
+
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag["entry"] == {"address": "**REDACTED**", CONF_KL: "**REDACTED**"}
+    assert TEST_KL not in str(diag) and ADDRESS not in str(diag)
+    assert diag["measurement_types"] == ["fat_ratio", "heart_rate", "weight"]
+
     assert await hass.config_entries.async_unload(entry.entry_id)

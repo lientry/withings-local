@@ -9,7 +9,14 @@ from .conftest import SETUP_UUID, service_info
 
 def test_has_new_data_only_for_installed_advert() -> None:
     assert has_new_data(service_info())
-    assert not has_new_data(service_info(uuid=SETUP_UUID))
+    assert not has_new_data(service_info(uuid=SETUP_UUID, mfr=b"\x00\x00\x00\x00"))
+
+
+def test_has_new_data_from_manufacturer_data_alone() -> None:
+    # Passive scanners may miss the scan response that carries the service UUID.
+    assert has_new_data(service_info(uuid=None, mfr=b"\x12\x34\x56\x78"))
+    assert not has_new_data(service_info(uuid=None, mfr=b"\x00\x00\x00\x00"))
+    assert not has_new_data(service_info(uuid=None, mfr=None))
 
 
 def test_latest_weigh_in_merges_same_timestamp_and_adds_fat_ratio() -> None:
