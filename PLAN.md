@@ -39,7 +39,7 @@ What prior work says about WPP (from research — still to be verified against *
 - **Pairing:** BLE pairing uses a 6-digit passkey shown on the scale's display. On macOS, CoreBluetooth shows the system pairing dialog. In HA, passkey pairing through a local adapter works; through an ESPHome proxy it is unverified.
 - **MAC address:** macOS hides real MAC addresses from bleak, but the identity MAC is in the service-UUID tail, and the auth challenge needs exactly that.
 - **Closest reference:** esphome-withings-wpp (Body Smart). Read only; it's non-commercial licensed.
-- **Phones:** Android is available for APK extraction and HCI snoop captures. The iPhone can stay the daily Health Mate phone.
+- **Phone:** the Withings app runs on an Android phone.
 - **Key experiment (phase 5):** does a local GETALL + SYNC_OK stop the scale's own Wi-Fi upload to Withings? If it does, choose between local-only and pulling without acknowledging.
 
 ## Status (2026-10-16)
