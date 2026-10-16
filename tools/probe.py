@@ -2,7 +2,8 @@
 
 Usage: uv run tools/probe.py [--app-version N] [--os-version N] [--listen SECONDS]
 
-Safe by design. The script sends only PROBE, optionally CONNECT_REASON (a read), and DISCONNECT.
+Safe by design. The script sends only PROBE, optionally CONNECT_REASON and STORED_MEASURE action 0
+(both reads), and DISCONNECT.
 It never answers device requests such as SETUP_OK,
 so a setup-mode session ends with "Setup failed" on the display and nothing on the scale changes.
 If the link needs encryption, macOS shows a pairing dialog: type the code shown on the scale.
@@ -22,7 +23,20 @@ from bleak import BleakClient, BleakScanner
 
 from withings_wpp.codec import Message, Reassembler
 from withings_wpp.advertisement import is_withings
-from withings_wpp.messages import Cmd, CmdError, Obj, ProbeChallenge, ProbeReply, connect_reason_request, describe, probe
+from withings_wpp.messages import (
+    Cmd,
+    CmdError,
+    ConnectReason,
+    MeasureAction,
+    Obj,
+    ProbeChallenge,
+    ProbeReply,
+    StoredMeasureStatus,
+    connect_reason_request,
+    describe,
+    probe,
+    stored_measure,
+)
 
 WITH_MARKER = "-5749-5448-"
 CHAR_SHORT = "00000024"
@@ -45,6 +59,13 @@ def summarize(msg) -> list[str]:
                     f"bootloader={p.bl_version} firmware={p.soft_version} rescue={p.rescue_version} "
                     f"extra={len(p.extra)}B"
                 )
+            elif tlv.type == Obj.CONNECT_REASON:
+                reason = int.from_bytes(tlv.value[:2], "big")
+                names = {v: k for k, v in vars(ConnectReason).items() if not k.startswith("_")}
+                lines.append(f"    connect reason: {reason} ({names.get(reason, '?')})")
+            elif tlv.type == Obj.STORED_MEASURE_STATUS:
+                st = StoredMeasureStatus.parse(tlv.value)
+                lines.append(f"    stored measures: count={st.count} wifi_configured={st.wifi_configured}")
             elif tlv.type == Obj.CMD_ERROR:
                 lines.append(f"    error: {CmdError.parse(tlv.value)}")
             elif tlv.type == Obj.PROBE_CHALLENGE:
@@ -109,6 +130,9 @@ async def main(args) -> None:
             if args.connect_reason and client.is_connected:
                 # Read-only query; the scale may refuse it before authentication.
                 await send(connect_reason_request(), 3)
+            if args.get_state and client.is_connected:
+                # Read-only: asks how many measurements are stored (action 0). Never sends delete.
+                await send(stored_measure(MeasureAction.GET_STATE), 3)
             if client.is_connected:
                 # The phone app ends every session this way.
                 await send(Message(Cmd.DISCONNECT), 1)
@@ -130,4 +154,5 @@ if __name__ == "__main__":
     p.add_argument("--os-version", type=int, default=34, help="AppProbeOsVersion, e.g. Android API level")
     p.add_argument("--listen", type=float, default=8, help="seconds to keep listening after the last message")
     p.add_argument("--connect-reason", action="store_true", help="also ask the scale why it connected")
+    p.add_argument("--get-state", action="store_true", help="also ask how many measurements are stored (read-only)")
     asyncio.run(main(p.parse_args()))
