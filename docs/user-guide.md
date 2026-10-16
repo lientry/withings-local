@@ -17,3 +17,21 @@ Then:
 - The scale no longer uploads to Withings by itself. The Withings app still uploads readings when your phone syncs with the scale over Bluetooth.
 - To undo it, repeat the steps and pick your Wi-Fi network instead.
 - Buttons: a **short** press opens the on-scale menu. A **3-second hold** starts configuration with the app. Avoid the **Reset** entry in the on-scale menu: it wipes the scale's setup.
+
+## Set up Home Assistant
+
+You need:
+- Home Assistant 2026.10 or newer
+- a Bluetooth adapter, or an ESPHome Bluetooth proxy, within a few meters of the scale
+- the scale in Bluetooth mode (above)
+
+1. Install the integration (HACS custom repository, or copy `custom_components/withings_local` into your config folder) and restart Home Assistant.
+2. Step on the scale. When it advertises, Home Assistant offers **Withings Local (Bluetooth)** as a discovered device. You can also add it from **Settings → Devices & services → Add integration** right after a weigh-in.
+3. Choose how to give it the scale's key:
+   - **Fetch the key with my Withings login.** Your email and password go to Withings once and are not stored.
+   - **Enter the key myself.** Paste the value from `tools/fetch_kl.py`.
+4. Weigh in. Within about a minute of the reading finishing, the sensors update.
+
+Notes:
+- **The phone app can compete for the readings.** If your phone's Withings app connects to the scale first, it uploads the readings and then deletes them from the scale, so Home Assistant may miss that weigh-in. Home Assistant never deletes readings. Put the adapter or proxy close to the scale.
+- **Every reading is picked up, whoever stands on the scale.** The integration shows the latest weigh-in; per-person sensors are planned.

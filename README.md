@@ -1,29 +1,48 @@
 # withings-local
 
-Read measurements from a Withings smart scale over Bluetooth LE, locally, without the Withings cloud. Then use them in Home Assistant.
+Read measurements from a Withings smart scale over Bluetooth LE, locally, without the Withings cloud, and use them in Home Assistant.
 
-> **Status: early research.** Nothing here talks to a scale yet. See [PLAN.md](PLAN.md) for the roadmap.
+> **Status: working prototype.** It reads weigh-ins from a Body Smart (WBS13), and the values match the Withings app. The Home Assistant integration is new and not yet tested on a real installation.
 
-**Target hardware:** Withings Body Smart (WBS13). Other Withings scales that use the same BLE protocol may follow.
+## What's here
 
-## What this is
-- A clean-room description of the scale's BLE protocol, in [`docs/`](docs/), written from interoperability research.
-- A Python library and CLI to pull measurements from your own scale (planned).
-- A Home Assistant custom integration that exposes those measurements as local sensors (planned).
+| Path | What |
+|---|---|
+| `custom_components/withings_local/` | Home Assistant integration: Bluetooth discovery, setup, sensors for the latest weigh-in |
+| `src/withings_wpp/` | Python library (`withings-wpp`): clean-room client for the scale's Bluetooth protocol, read-only |
+| `tools/` | CLI helpers: scan, probe, `fetch_kl.py` (get your scale's key), `read_measurements.py` |
+| `docs/` | Protocol notes, recon log, [user guide](docs/user-guide.md) |
 
-## What this is not
-- It contains no Withings code, firmware or app files, and none should ever be committed here.
-- It is not a medical device. Values come from the scale as-is, with no guarantee of accuracy, and a firmware update may break things.
+**Supported:** Withings Body Smart (WBS13) in **Bluetooth mode**. Other Withings scales using the same protocol may work but are untested.
+
+**Sensors:**
+- weight, fat mass, fat ratio, fat-free mass, muscle mass, bone mass, water mass
+- visceral fat, basal metabolic rate, metabolic age, heart rate
+- time of the last weigh-in
+
+## How it works
+
+1. After a weigh-in, the scale advertises over Bluetooth for a short time.
+2. Home Assistant connects through a local adapter or an ESPHome Bluetooth proxy.
+3. It proves it knows the scale's key (`kl`), then reads the stored measurements.
+4. Nothing is deleted, so the Withings app still syncs the same readings when your phone is nearby.
+
+You get `kl` once, from your own Withings account: the integration's setup can fetch it with your login, or you can paste it.
 
 ## Development
 ```bash
-uv sync
+uv sync --group ha
+uv run pytest
 uv run tools/ble_scan.py 60   # run from your own terminal, then step on the scale
 ```
 On macOS, Bluetooth scripts need Bluetooth permission for the terminal app that runs them.
 
+## Not
+- **No Withings code.** The repo contains no Withings code, firmware or app files, and must never contain any.
+- **Not a medical device.** Values are as reported by the scale, with no guarantee of accuracy. Firmware updates may break things.
+
 ## Legal
-This project exists to make hardware you own work with other software (interoperability). Withings is a trademark of Withings SA. This project is not affiliated with, endorsed by, or supported by Withings. Use it at your own risk.
+This project exists for interoperability with hardware you own. Withings is a trademark of Withings SA. This project is not affiliated with, endorsed by or supported by Withings. Use it at your own risk.
 
 ## License
 [MIT](LICENSE)
