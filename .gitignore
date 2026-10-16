@@ -37,3 +37,6 @@ work/
 .DS_Store
 .idea/
 .vscode/
+
+# Tool logs (may contain local paths)
+*.log
