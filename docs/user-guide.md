@@ -32,7 +32,15 @@ You need:
 3. Choose how to give it the scale's key:
    - **Fetch the key with my Withings login.** Your email and password go to Withings once and are not stored.
    - **Enter the key myself.** Paste the value from `tools/fetch_kl.py`.
-4. Weigh in. Within about a minute of the reading finishing, the sensors update.
+4. **Pair with the scale (once).** The scale only shares measurements over a Bluetooth connection paired with the 6-digit code on its display.
+   1. Hold the button under the scale for **3 seconds**.
+   2. Choose **Pair now**.
+   3. Enter the code the scale shows. You have about 30 seconds.
+5. Weigh in. Within about a minute of the reading finishing, the sensors update.
+
+If the pairing is lost later (for example after a battery change), Home Assistant shows **Reauthentication required** for the integration. Open it and pair again. You can also re-pair at any time with **Reconfigure** from the integration's menu.
+
+**Pairing needs a Bluetooth adapter connected to the Home Assistant host, on Linux (for example a Raspberry Pi's built-in Bluetooth or a USB dongle).** ESPHome Bluetooth proxies can't pair with a code yet. If you also use proxies, keep the scale closer to the paired adapter: Home Assistant may otherwise route the connection through a proxy that doesn't hold the pairing.
 
 Notes:
 - **The phone app can compete for the readings.** If your phone's Withings app connects to the scale first, it uploads the readings and then deletes them from the scale, so Home Assistant may miss that weigh-in. Home Assistant never deletes readings. Put the adapter or proxy close to the scale.

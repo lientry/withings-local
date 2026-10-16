@@ -4,6 +4,16 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+### Added
+- **Pairing during setup.** The scale only shares measurements over a Bluetooth connection paired with the 6-digit code on its display. Setup now asks you to hold the scale's button, waits for its setup-mode signal, and asks for the code. Home Assistant registers a temporary BlueZ pairing agent for this, and the pairing is stored on the host.
+- **Reauthentication when pairing is lost.** If the scale refuses a connection because it isn't paired (for example after a battery change), Home Assistant raises "Reauthentication required" and walks you through pairing again. You can also re-pair at any time with Reconfigure.
+
+### Changed
+- Connection retries use the newest Bluetooth device data, and "can't connect" warnings include Home Assistant's reachability diagnostics.
+
+### Known limitations
+- Pairing works with Bluetooth adapters attached to the Home Assistant host on Linux. ESPHome Bluetooth proxies can't pair with a code, and a proxy without the pairing can't read the scale (upstream habluetooth issue #628).
+
 ### Fixed
 - When the scale drops the Bluetooth link mid-session, the sync fails at once and retries on the next advertisement, instead of waiting for a timeout. Linux (BlueZ) leaves the pending call hanging in this case.
 

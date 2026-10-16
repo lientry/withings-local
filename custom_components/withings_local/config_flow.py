@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 import aiohttp
+from bluetooth_data_tools import monotonic_time_coarse
 import voluptuous as vol
 from .withings_wpp import account
 from .withings_wpp.advertisement import WithingsUuid
 
+from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, async_discovered_service_info
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_RECONFIGURE, ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS, CONF_EMAIL, CONF_PASSWORD
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
 from .const import BODY_SMART_MODEL_ID, CONF_KL, CONF_USERS, DOMAIN, LOCAL_NAME_PREFIX
+from .coordinator import is_setup_mode
+from .pairing import PairingFailed, PairingSession, PairingUnsupported, device_path
+
+# How long to wait for the scale to advertise after the user holds its button.
+PAIRING_ADVERTISEMENT_TIMEOUT = 90
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,6 +88,11 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
         self._address: str | None = None
         self._name: str | None = None
         self._discovered: dict[str, str] = {}
+        self._kl: str | None = None
+        self._users: dict[str, str] | None = None
+        self._pair_task: asyncio.Task | None = None
+        self._pairing: PairingSession | None = None
+        self._pair_error: str | None = None
 
     async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak) -> ConfigFlowResult:
         if not is_body_smart(discovery_info):
@@ -141,7 +154,7 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error fetching the scale key")
                 errors["base"] = "unknown"
             else:
-                return self._create(kl, users)
+                return await self._create(kl, users)
         return self.async_show_form(
             step_id="login",
             data_schema=vol.Schema(
@@ -163,16 +176,162 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
             if len(kl) < 16:
                 errors[CONF_KL] = "invalid_key"
             else:
-                return self._create(kl)
+                return await self._create(kl)
         return self.async_show_form(
             step_id="manual",
             data_schema=vol.Schema({vol.Optional(CONF_KL): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))}),
             errors=errors,
         )
 
-    def _create(self, kl: str, users: dict[str, str] | None = None) -> ConfigFlowResult:
+    async def _create(self, kl: str, users: dict[str, str] | None = None) -> ConfigFlowResult:
+        """Key obtained: continue with pairing."""
+        self._kl, self._users = kl, users
+        return await self.async_step_pair()
+
+    # --- Pairing -------------------------------------------------------------------------------
+
+    async def async_step_pair(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Explain pairing and let the user start it (or skip if already paired)."""
+        return self.async_show_menu(step_id="pair", menu_options=["pair_now", "pair_skip"])
+    # The scale only shares data over a link bonded with the passkey on its display. We wait for
+    # it to advertise in setup mode (button held 3 s), then pair through a BlueZ agent.
+
+    async def async_step_pair_now(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Wait for the scale in setup mode, request pairing, wait until it shows its code."""
+        if self._pair_task is None:
+            self._pair_error = None
+            self._pair_task = self.hass.async_create_task(self._async_start_pairing())
+        if not self._pair_task.done():
+            return self.async_show_progress(
+                step_id="pair_now", progress_action="wait_for_scale", progress_task=self._pair_task
+            )
+        task, self._pair_task = self._pair_task, None
+        try:
+            already_paired = task.result()
+        except TimeoutError:
+            await self._async_close_pairing()
+            return self.async_show_progress_done(next_step_id="pair_timeout")
+        except PairingUnsupported as err:
+            _LOGGER.info("Pairing not possible here (%s); continuing without it", err.reason)
+            self._pair_error = err.reason
+            await self._async_close_pairing()
+            return self.async_show_progress_done(next_step_id="pair_unsupported")
+        except PairingFailed as err:
+            _LOGGER.warning("Pairing with the scale failed: %s", err)
+            self._pair_error = str(err)
+            await self._async_close_pairing()
+            return self.async_show_progress_done(next_step_id="pair_failed")
+        if already_paired:
+            await self._async_close_pairing()
+            return self.async_show_progress_done(next_step_id="pair_finish")
+        return self.async_show_progress_done(next_step_id="passkey")
+
+    async def _async_start_pairing(self) -> bool:
+        """Return True when the scale is already paired (no code needed)."""
         assert self._address is not None
-        data = {CONF_ADDRESS: self._address, CONF_KL: kl}
-        if users:
-            data[CONF_USERS] = users
+        started = monotonic_time_coarse()
+        service_info = await bluetooth.async_process_advertisements(
+            self.hass,
+            # A fresh setup-mode advertisement: a cached one would start the code timer too early.
+            lambda info: info.time >= started and is_setup_mode(info),
+            {"address": self._address, "connectable": True},
+            bluetooth.BluetoothScanningMode.ACTIVE,
+            PAIRING_ADVERTISEMENT_TIMEOUT,
+        )
+        self._pairing = PairingSession(device_path(self.hass, service_info))
+        if await self._pairing.start():
+            return True
+        await self._pairing.wait_for_passkey_request()
+        return False
+
+    async def async_step_passkey(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Ask for the 6-digit code shown on the scale."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            code = str(user_input.get("passkey", "")).strip()
+            if not (code.isdigit() and len(code) == 6):
+                errors["passkey"] = "invalid_passkey"
+            else:
+                assert self._pairing is not None
+                try:
+                    await self._pairing.submit_passkey(int(code))
+                except PairingFailed as err:
+                    _LOGGER.warning("Pairing with the scale failed: %s", err)
+                    self._pair_error = str(err)
+                    await self._async_close_pairing()
+                    return await self.async_step_pair_failed()
+                await self._async_close_pairing()
+                return await self.async_step_pair_finish()
+        return self.async_show_form(
+            step_id="passkey",
+            data_schema=vol.Schema({vol.Required("passkey"): TextSelector(TextSelectorConfig(type=TextSelectorType.NUMBER))}),
+            errors=errors,
+        )
+
+    async def async_step_pair_timeout(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The scale never showed up in setup mode."""
+        return self.async_show_menu(step_id="pair_timeout", menu_options=["pair_now", "pair_skip"])
+
+    async def async_step_pair_failed(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return self.async_show_menu(
+            step_id="pair_failed",
+            menu_options=["pair_now", "pair_skip"],
+            description_placeholders={"error": self._pair_error or "unknown"},
+        )
+
+    async def async_step_pair_unsupported(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pairing can't be driven here (ESPHome proxy, or not Linux)."""
+        return self.async_show_menu(step_id="pair_unsupported", menu_options=["pair_skip"])
+
+    async def async_step_pair_skip(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self.async_step_pair_finish()
+
+    async def async_step_pair_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        assert self._address is not None and self._kl is not None
+        data = {CONF_ADDRESS: self._address, CONF_KL: self._kl}
+        if self._users:
+            data[CONF_USERS] = self._users
+        if self.source == SOURCE_REAUTH:
+            entry = self._get_reauth_entry()
+            return self.async_update_reload_and_abort(entry, data={**entry.data, **data})
+        if self.source == SOURCE_RECONFIGURE:
+            entry = self._get_reconfigure_entry()
+            return self.async_update_reload_and_abort(entry, data={**entry.data, **data})
         return self.async_create_entry(title=self._name or LOCAL_NAME_PREFIX, data=data)
+
+    async def _async_close_pairing(self) -> None:
+        if self._pairing is not None:
+            try:
+                await self._pairing.close()
+            except Exception:  # noqa: BLE001 - cleanup must not break the flow
+                _LOGGER.debug("Closing the pairing session failed", exc_info=True)
+            self._pairing = None
+
+    def async_remove(self) -> None:
+        """The user closed the dialog: stop waiting and release the agent."""
+        if self._pair_task is not None and not self._pair_task.done():
+            self._pair_task.cancel()
+        if self._pairing is not None:
+            self.hass.async_create_task(self._async_close_pairing())
+
+    # --- Reauth: the scale stopped accepting the link (pairing lost) ---------------------------
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        entry = self._get_reauth_entry()
+        self._address, self._name = entry.data[CONF_ADDRESS], entry.title
+        self._kl, self._users = entry.data[CONF_KL], entry.data.get(CONF_USERS)
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return await self.async_step_pair()
+        self._set_confirm_only()
+        return self.async_show_form(step_id="reauth_confirm", description_placeholders={"name": self._name or ""})
+
+    # --- Reconfigure: pair again (e.g. after a battery change) ---------------------------------
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        entry = self._get_reconfigure_entry()
+        self._address, self._name = entry.data[CONF_ADDRESS], entry.title
+        self._kl, self._users = entry.data[CONF_KL], entry.data.get(CONF_USERS)
+        return await self.async_step_pair()

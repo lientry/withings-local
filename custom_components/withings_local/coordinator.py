@@ -81,6 +81,22 @@ def has_new_data(service_info: BluetoothServiceInfoBleak) -> bool:
     return bool(mfr) and any(mfr)
 
 
+def _is_bonded(device) -> bool:
+    """BlueZ reports Paired on the device object; unknown elsewhere (assume bonded)."""
+    details = getattr(device, "details", None)
+    if not isinstance(details, dict) or "props" not in details:
+        return True
+    return bool(details["props"].get("Paired"))
+
+
+def is_setup_mode(service_info: BluetoothServiceInfoBleak) -> bool:
+    """True for the advertisement the scale sends in setup mode (button held 3 s): it can be
+    paired then, and it won't hand out measurements."""
+    if has_new_data(service_info):
+        return False
+    return any((w := WithingsUuid.parse(u)) and w.model_id == BODY_SMART_MODEL_ID for u in service_info.service_uuids)
+
+
 class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
     """Poll the scale whenever it advertises new measurements."""
 
@@ -91,6 +107,7 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
         # Users seen so far, in order of first appearance; persisted so their entities exist after a restart.
         self.known_users: list[int] = list(entry.options.get(OPT_KNOWN_USERS, []))
         self._new_user_listeners: list[Callable[[list[int]], None]] = []
+        self._pairing_requested = False
         super().__init__(
             hass=hass,
             logger=_LOGGER,
@@ -101,6 +118,13 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
             connectable=True,
         )
         self.data = ScaleData()
+
+    @callback
+    def _async_request_pairing(self) -> None:
+        """Ask the user to pair (reauth flow). HA keeps a single flow per entry."""
+        if not self._pairing_requested:
+            self._pairing_requested = True
+            self._entry.async_start_reauth(self.hass)
 
     @callback
     def async_add_new_user_listener(self, listener: Callable[[list[int]], None]) -> CALLBACK_TYPE:
@@ -157,6 +181,12 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
             if session is not None:
                 session.mark_disconnected()
 
+        def fresh_device():
+            # Retries use the newest BLEDevice (the best adapter may change between attempts).
+            return bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True) or (
+                device or service_info.device
+            )
+
         try:
             client = await establish_connection(
                 BleakClientWithServiceCache,
@@ -164,6 +194,7 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
                 self.title,
                 disconnected_callback=on_disconnect,
                 max_attempts=3,
+                ble_device_callback=fresh_device,
             )
             step = "reading"
             _LOGGER.debug("%s: connected after %.1fs", self.title, time.monotonic() - started)
@@ -176,8 +207,18 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
                 await client.disconnect()
         except Exception as err:
             # HA's coordinator only logs the first failure in a row; log every one so users can debug range issues.
+            needs_pairing = step == "reading" and "subscrib" in str(err) and not _is_bonded(device or service_info.device)
+            if needs_pairing:
+                hint = " The scale needs to be paired with Home Assistant; a repair notification will guide you."
+                self._async_request_pairing()
+            elif step == "connecting":
+                hint = " " + bluetooth.async_address_reachability_diagnostics(
+                    self.hass, self.address, bluetooth.BluetoothReachabilityIntent.CONNECTION
+                )
+            else:
+                hint = ""
             _LOGGER.warning(
-                "%s: sync failed while %s after %.1fs via %s (rssi %s): %s: %s",
+                "%s: sync failed while %s after %.1fs via %s (rssi %s): %s: %s%s",
                 self.title,
                 step,
                 time.monotonic() - started,
@@ -185,6 +226,7 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
                 service_info.rssi,
                 type(err).__name__,
                 err,
+                hint,
             )
             raise
 
