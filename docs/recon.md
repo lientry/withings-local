@@ -66,4 +66,24 @@ The scale was switched to Bluetooth mode with the official app (see [user-guide.
 
 Conclusion: reading measurements needs the challenge answered with `kl`. That matches the app analysis in [protocol.md](protocol.md).
 
+### First authenticated read (`tools/read_measurements.py`)
+
+`kl` came from the user's own account via `tools/fetch_kl.py`: one association, model 16, 32-character `kl`. The session went:
+
+1. PROBE → `PROBE_CHALLENGE`.
+2. Our answer plus our own challenge → `PROBE_REPLY` plus the scale's answer. **Mutual authentication succeeded.**
+3. CONNECT_REASON → 2 (weigh-in).
+4. STORED_MEASURE action 0 → 4 groups stored.
+5. Action 1 → those 4 groups as a multi-message list ending in Null.
+6. DISCONNECT.
+
+What the records showed:
+- Each weigh-in produced **two groups with the same timestamp**: one with body composition, one with heart rate.
+- Body-composition group: weight (1), fat mass (8), fat-free mass (5), hydration (77), bone mass (88), muscle mass (76), visceral fat (170), BMR (226), metabolic age (227), plus unnamed types 177, 178, 189, 201, 202, 203 and 207.
+- Heart-rate group: heart rate (11).
+- `STORED_MEASURE_META` carried three user IDs on this account. The parser accepted the layout without a separate array prefix.
+- Extra TLVs 299 (meta extend) and 2451 (data position) also appeared; we don't parse them yet.
+
+No delete was sent, so the readings should still sync to the official app.
+
 Tooling note: macOS kills Bluetooth processes launched by the `claude` CLI (TCC: no usage description). Run Bluetooth tools with `tools/terminal_run.sh`.

@@ -18,7 +18,11 @@ MEASURE_TYPES = {
     76: ("muscle_mass", "kg"),
     77: ("hydration", "kg"),
     88: ("bone_mass", "kg"),
+    170: ("visceral_fat", ""),  # index, per the public API
+    226: ("basal_metabolic_rate", "kcal"),
+    227: ("metabolic_age", "years"),
 }
+# Also observed from a Body Smart, meaning unknown: 177, 178, 189, 201, 202, 203, 207.
 
 
 @dataclass(frozen=True)
