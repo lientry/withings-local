@@ -87,6 +87,10 @@ def connect_reason_request() -> Message:
     return Message(Cmd.CONNECT_REASON)
 
 
+def battery_request() -> Message:
+    return Message(Cmd.BATTERY_PERCENT)
+
+
 def stored_measure(action: int) -> Message:
     return Message(Cmd.STORED_MEASURE, (Tlv(Obj.STORED_MEASURE_ACTION, struct.pack(">Bb", action, 0)),))
 

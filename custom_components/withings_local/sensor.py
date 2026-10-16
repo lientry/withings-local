@@ -96,6 +96,14 @@ SENSORS: tuple[WithingsSensorDescription, ...] = (
         value_fn=lambda data: data.measured_at,
     ),
     WithingsSensorDescription(
+        key="battery",
+        device_class=SensorDeviceClass.BATTERY,
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.battery,
+    ),
+    WithingsSensorDescription(
         key="last_sync",
         translation_key="last_sync",
         device_class=SensorDeviceClass.TIMESTAMP,

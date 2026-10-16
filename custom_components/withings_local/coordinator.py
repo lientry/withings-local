@@ -35,6 +35,7 @@ class ScaleData:
     measured_at: datetime | None = None
     values: dict[str, float] = field(default_factory=dict)
     firmware: int | None = None
+    battery: int | None = None
     last_sync: datetime | None = None
 
 
@@ -123,6 +124,7 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
             measured_at=self.data.measured_at,
             values=self.data.values,
             firmware=result.firmware or self.data.firmware,
+            battery=result.battery if result.battery is not None else self.data.battery,
             last_sync=dt_util.utcnow(),
         )
         if (latest := latest_weigh_in(result.groups)) and (

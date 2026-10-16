@@ -25,6 +25,7 @@ from .messages import (
     ProbeChallenge,
     ProbeReply,
     StoredMeasureStatus,
+    battery_request,
     connect_reason_request,
     describe,
     probe,
@@ -150,6 +151,12 @@ class ScaleClient:
         (tlv,) = reply.find(Obj.CONNECT_REASON)
         return int.from_bytes(tlv.value[:2], "big")
 
+    async def battery(self) -> int:
+        """Battery level in percent (a read; the phone app asks for it on every sync)."""
+        (reply,) = await self.session.request(battery_request())
+        (tlv,) = reply.find(Obj.BATTERY_PERCENT)
+        return int.from_bytes(tlv.value[:2], "big")
+
     async def measure_status(self) -> StoredMeasureStatus:
         (reply,) = await self.session.request(stored_measure(MeasureAction.GET_STATE))
         (tlv,) = reply.find(Obj.STORED_MEASURE_STATUS)
@@ -176,6 +183,7 @@ class SyncResult:
     connect_reason: int | None
     firmware: int | None
     groups: list[MeasureGroup]
+    battery: int | None = None
 
 
 async def read_measurements(ble: BleakClient, kl: str) -> SyncResult:
@@ -187,6 +195,11 @@ async def read_measurements(ble: BleakClient, kl: str) -> SyncResult:
     firmware = auth_result.reply.soft_version if auth_result.reply else None
     if not auth_result.authenticated:
         return SyncResult(False, False, None, firmware, [])
+    try:
+        battery = await scale.battery()
+    except (WppCommandError, TimeoutError, ValueError):
+        _LOGGER.debug("battery level not available", exc_info=True)
+        battery = None
     try:
         reason = await scale.connect_reason()
     except WppCommandError:
@@ -201,4 +214,4 @@ async def read_measurements(ble: BleakClient, kl: str) -> SyncResult:
         await scale.disconnect()
     except Exception:  # noqa: BLE001 - the scale may already be gone
         _LOGGER.debug("disconnect message not delivered", exc_info=True)
-    return SyncResult(True, auth_result.scale_verified, reason, firmware, groups)
+    return SyncResult(True, auth_result.scale_verified, reason, firmware, groups, battery)
