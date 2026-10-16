@@ -9,9 +9,9 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check the tag matches the integration version
         run: |
@@ -22,8 +22,13 @@ jobs:
             exit 1
           fi
 
-      - uses: astral-sh/setup-uv@v6
-      - run: uv sync --group ha
+      - uses: astral-sh/setup-uv@v10
+        with:
+          # Home Assistant's Python. Newer versions lack prebuilt wheels and compile from source.
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --group ha --locked
       - run: uv run pytest
 
       - name: Extract release notes from CHANGELOG.md
