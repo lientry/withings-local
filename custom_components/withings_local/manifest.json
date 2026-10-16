@@ -1,0 +1,24 @@
+{
+  "domain": "withings_local",
+  "name": "Withings Local (Bluetooth)",
+  "bluetooth": [
+    {
+      "connectable": true,
+      "manufacturer_id": 1023
+    },
+    {
+      "connectable": true,
+      "local_name": "Body Smart*"
+    }
+  ],
+  "codeowners": ["@pierosavi"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/pierosavi/withings-local",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/pierosavi/withings-local/issues",
+  "loggers": ["withings_wpp"],
+  "requirements": ["withings-wpp==0.1.0"],
+  "version": "0.1.0"
+}

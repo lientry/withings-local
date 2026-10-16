@@ -1,7 +1,7 @@
 [project]
-name = "withings-local"
+name = "withings-wpp"
 version = "0.1.0"
-description = "Local Bluetooth access to Withings smart scales, for Home Assistant. Not affiliated with Withings."
+description = "Clean-room client for the Bluetooth protocol of Withings smart scales (read-only). Not affiliated with Withings."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -12,7 +12,18 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8"]
-ha = ["pytest-homeassistant-custom-component>=0.13.372"]
+ha = [
+    "aiousbwatcher==1.1.2",
+    "bleak==3.0.2",
+    "bleak-retry-connector==4.7.1",
+    "bluetooth-adapters==2.4.0",
+    "bluetooth-auto-recovery==1.6.4",
+    "bluetooth-data-tools==1.29.24",
+    "dbus-fast==5.0.22",
+    "habluetooth==7.1.2",
+    "pytest-homeassistant-custom-component>=0.13.372",
+    "serialx==1.11.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -23,6 +34,7 @@ packages = ["src/withings_wpp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

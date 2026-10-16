@@ -1,0 +1,58 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "description": "Pick your scale. If it isn't listed, step on it and try again: it only advertises right after a weigh-in.",
+        "data": { "address": "Scale" }
+      },
+      "bluetooth_confirm": {
+        "description": "Set up {name}? The scale must be in Bluetooth mode (see the documentation)."
+      },
+      "key": {
+        "description": "The scale only shares measurements with clients that know its secret key (kl), which is stored in your Withings account.",
+        "menu_options": {
+          "login": "Fetch the key with my Withings login",
+          "manual": "Enter the key myself"
+        }
+      },
+      "login": {
+        "description": "Your credentials are sent only to Withings, once, to download the key. They are not stored. Accounts that use Google or Apple sign-in need a Withings password first.",
+        "data": { "email": "Email", "password": "Password" }
+      },
+      "manual": {
+        "description": "Paste the scale's kl key, for example from the project's fetch_kl tool.",
+        "data": { "kl": "Key (kl)" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Withings rejected the email or password.",
+      "no_scale": "No Body Smart scale was found on this Withings account.",
+      "cannot_connect": "Could not reach Withings.",
+      "invalid_key": "That doesn't look like a valid key.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This scale is already configured.",
+      "no_devices_found": "No scale found. Step on it so it advertises, then try again.",
+      "not_supported": "This device isn't a supported Withings scale."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "weight": { "name": "Weight" },
+      "fat_mass": { "name": "Fat mass" },
+      "fat_free_mass": { "name": "Fat-free mass" },
+      "muscle_mass": { "name": "Muscle mass" },
+      "bone_mass": { "name": "Bone mass" },
+      "hydration": { "name": "Water mass" },
+      "fat_ratio": { "name": "Fat ratio" },
+      "visceral_fat": { "name": "Visceral fat" },
+      "basal_metabolic_rate": { "name": "Basal metabolic rate" },
+      "metabolic_age": { "name": "Metabolic age" },
+      "heart_rate": { "name": "Heart rate" },
+      "measured_at": { "name": "Last weigh-in" },
+      "last_sync": { "name": "Last sync" }
+    }
+  }
+}
