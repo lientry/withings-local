@@ -97,3 +97,18 @@ Consequence for the HA integration: whoever connects first after a weigh-in gets
 - HA connects first (adapter or proxy close to the scale) and reads without deleting.
 - Accept that HA only sees readings when the phone isn't around.
 - Make HA the only reader, with optional delete and optional cloud upload.
+
+### Wi-Fi mode again: can local sync coexist with Wi-Fi? (2026-10-16)
+
+esphome-withings-wpp reports that its Body Smart keeps uploading over Wi-Fi while an ESP32 reads it locally, after a one-time **passkey bond** that the ESP32 initiates. We switched our scale back to Wi-Fi mode and tested this from macOS.
+
+| Test | Result |
+|---|---|
+| Weigh-in, timed scan | **No advertisement**, same as before the Bluetooth-mode episode |
+| Button press, connect, subscribe, PROBE, CONNECT_REASON | Setup-mode reply (`PROBE_REPLY`), reason 1. **No encryption demanded**, so macOS never offered to pair. |
+
+Conclusion so far:
+- On this firmware (1311), an unbonded scale in Wi-Fi mode never advertises after a weigh-in.
+- Whether a passkey bond changes that is still **untested**. macOS (CoreBluetooth) can't initiate BLE pairing, and the scale never requested it.
+- Testing it needs a central that can start pairing with passkey entry: BlueZ (`bluetoothctl` with a KeyboardDisplay agent) or an ESP32.
+- Even if bonding works, the HA integration would need passkey pairing through HA's Bluetooth stack. HA has no user flow for that today, either for local adapters or for ESPHome proxies.
