@@ -6,6 +6,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .const import LOCAL_NAME_PREFIX
 from .coordinator import WithingsLocalConfigEntry, WithingsScaleCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
@@ -14,6 +15,9 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 async def async_setup_entry(hass: HomeAssistant, entry: WithingsLocalConfigEntry) -> bool:
     """Set up a scale. It only advertises after a weigh-in, so don't require it to be in range now."""
     _remove_single_user_entities(hass, entry)
+    if entry.title.replace("-", ":").upper() == entry.data["address"].upper():
+        # Set up before 0.2.1 from an advertisement without a name: use a readable title.
+        hass.config_entries.async_update_entry(entry, title=LOCAL_NAME_PREFIX)
     coordinator = WithingsScaleCoordinator(hass, entry)
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from datetime import datetime
 import logging
+import time
 
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from .withings_wpp.advertisement import WithingsUuid
@@ -121,7 +122,13 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
     @callback
     def _needs_poll(self, service_info: BluetoothServiceInfoBleak, seconds_since_last_poll: float | None) -> bool:
         new_data = has_new_data(service_info)
-        due = seconds_since_last_poll is None or seconds_since_last_poll >= POLL_COOLDOWN_SECONDS
+        # The cooldown only avoids re-reading after a successful sync; after a failure, retry while
+        # the scale is still advertising (its window is short).
+        due = (
+            seconds_since_last_poll is None
+            or seconds_since_last_poll >= POLL_COOLDOWN_SECONDS
+            or not self.last_poll_successful
+        )
         _LOGGER.debug(
             "%s: advertisement via %s (rssi %s, connectable %s, uuids %d, withings mfr data %s): new data %s, poll due %s",
             self.title,
@@ -136,15 +143,35 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
         return new_data and due
 
     async def _async_sync(self, service_info: BluetoothServiceInfoBleak) -> ScaleData:
-        _LOGGER.info("%s: weigh-in advertised, connecting via %s", self.title, service_info.source)
-        device = bluetooth.async_ble_device_from_address(self.hass, service_info.address, connectable=True)
-        client = await establish_connection(
-            BleakClientWithServiceCache, device or service_info.device, self.title, max_attempts=3
+        _LOGGER.info(
+            "%s: weigh-in advertised, connecting via %s (rssi %s)", self.title, service_info.source, service_info.rssi
         )
+        device = bluetooth.async_ble_device_from_address(self.hass, service_info.address, connectable=True)
+        started = time.monotonic()
+        step = "connecting"
         try:
-            result = await read_measurements(client, self._kl)
-        finally:
-            await client.disconnect()
+            client = await establish_connection(
+                BleakClientWithServiceCache, device or service_info.device, self.title, max_attempts=3
+            )
+            step = "reading"
+            _LOGGER.debug("%s: connected after %.1fs", self.title, time.monotonic() - started)
+            try:
+                result = await read_measurements(client, self._kl)
+            finally:
+                await client.disconnect()
+        except Exception as err:
+            # HA's coordinator only logs the first failure in a row; log every one so users can debug range issues.
+            _LOGGER.warning(
+                "%s: sync failed while %s after %.1fs via %s (rssi %s): %s: %s",
+                self.title,
+                step,
+                time.monotonic() - started,
+                service_info.source,
+                service_info.rssi,
+                type(err).__name__,
+                err,
+            )
+            raise
 
         if not result.authenticated:
             _LOGGER.debug("%s: session without authentication (button press?), nothing to read", self.title)

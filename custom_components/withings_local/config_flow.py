@@ -22,6 +22,14 @@ from .const import BODY_SMART_MODEL_ID, CONF_KL, CONF_USERS, DOMAIN, LOCAL_NAME_
 _LOGGER = logging.getLogger(__name__)
 
 
+def device_name(info: BluetoothServiceInfoBleak) -> str:
+    """The advertised name, or "Body Smart" when the adapter didn't receive one (HA then uses the address)."""
+    name = info.name or ""
+    if not name or format_mac(name) == format_mac(info.address) or name.replace("-", ":").upper() == info.address.upper():
+        return LOCAL_NAME_PREFIX
+    return name
+
+
 def is_body_smart(info: BluetoothServiceInfoBleak) -> bool:
     if info.name and info.name.startswith(LOCAL_NAME_PREFIX):
         return True
@@ -79,7 +87,7 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(format_mac(discovery_info.address))
         self._abort_if_unique_id_configured()
         self._address = discovery_info.address
-        self._name = discovery_info.name or LOCAL_NAME_PREFIX
+        self._name = device_name(discovery_info)
         self.context["title_placeholders"] = {"name": self._name}
         return await self.async_step_bluetooth_confirm()
 
@@ -92,7 +100,7 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             self._address = user_input[CONF_ADDRESS]
-            self._name = self._discovered[self._address]
+            self._name = self._discovered[self._address].rsplit(" (", 1)[0]
             await self.async_set_unique_id(format_mac(self._address), raise_on_progress=False)
             self._abort_if_unique_id_configured()
             return await self.async_step_key()
@@ -100,7 +108,7 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
         current = self._async_current_ids(include_ignore=False)
         for info in async_discovered_service_info(self.hass, connectable=True):
             if format_mac(info.address) not in current and is_body_smart(info):
-                self._discovered[info.address] = f"{info.name or LOCAL_NAME_PREFIX} ({info.address})"
+                self._discovered[info.address] = f"{device_name(info)} ({info.address})"
         if not self._discovered:
             return self.async_abort(reason="no_devices_found")
         return self.async_show_form(

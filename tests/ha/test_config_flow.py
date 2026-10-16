@@ -69,3 +69,11 @@ async def test_empty_submit_goes_back_to_key_options(hass: HomeAssistant, mock_b
     assert result["errors"] == {"base": "missing_credentials"}
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.MENU and result["step_id"] == "key"
+
+
+async def test_unnamed_advertisement_gets_readable_title(hass: HomeAssistant, mock_bluetooth) -> None:
+    # Passive scanners may not receive the local name; HA then reports the address as the name.
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=service_info(name=ADDRESS)
+    )
+    assert result["description_placeholders"] == {"name": "Body Smart"}

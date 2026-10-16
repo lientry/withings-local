@@ -89,3 +89,12 @@ async def test_known_users_restored_and_old_entities_removed(hass: HomeAssistant
     # Users seen before a restart get their entities straight away.
     assert hass.states.get("sensor.body_smart_user_1_weight") is not None
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_address_title_is_renamed(hass: HomeAssistant, mock_bluetooth) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=ADDRESS.lower(), title=ADDRESS, data={"address": ADDRESS, CONF_KL: TEST_KL})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.title == "Body Smart"
+    assert await hass.config_entries.async_unload(entry.entry_id)

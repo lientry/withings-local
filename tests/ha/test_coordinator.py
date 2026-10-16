@@ -37,3 +37,20 @@ def test_latest_per_user_merges_and_separates_users() -> None:
     assert latest[BOB].values == {"weight": 90.0}
     assert latest[0].values == {"weight": 55.0}
     assert latest_per_user([]) == {}
+
+
+async def test_retries_during_window_after_failure(hass, mock_bluetooth) -> None:
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.withings_local.const import CONF_KL, DOMAIN
+    from custom_components.withings_local.coordinator import WithingsScaleCoordinator
+
+    from .conftest import ADDRESS, TEST_KL
+
+    entry = MockConfigEntry(domain=DOMAIN, title="Body Smart", data={"address": ADDRESS, CONF_KL: TEST_KL})
+    coordinator = WithingsScaleCoordinator(hass, entry)
+    info = service_info()
+    assert coordinator._needs_poll(info, None)  # noqa: SLF001
+    assert not coordinator._needs_poll(info, 5)  # noqa: SLF001 - recent successful sync: wait
+    coordinator.last_poll_successful = False
+    assert coordinator._needs_poll(info, 5)  # noqa: SLF001 - recent failure: retry now
