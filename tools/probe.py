@@ -20,7 +20,8 @@ from pathlib import Path
 from bleak import BleakClient, BleakScanner
 
 from withings_wpp.codec import Reassembler
-from withings_wpp.messages import Obj, ProbeChallenge, ProbeReply, describe, probe
+from withings_wpp.advertisement import is_withings
+from withings_wpp.messages import CmdError, Obj, ProbeChallenge, ProbeReply, describe, probe
 
 WITH_MARKER = "-5749-5448-"
 CHAR_SHORT = "00000024"
@@ -43,6 +44,8 @@ def summarize(msg) -> list[str]:
                     f"bootloader={p.bl_version} firmware={p.soft_version} rescue={p.rescue_version} "
                     f"extra={len(p.extra)}B"
                 )
+            elif tlv.type == Obj.CMD_ERROR:
+                lines.append(f"    error: {CmdError.parse(tlv.value)}")
             elif tlv.type == Obj.PROBE_CHALLENGE:
                 c = ProbeChallenge.parse(tlv.value)
                 lines.append(f"    ProbeChallenge: mac={redacted(c.mac)} challenge={len(c.challenge)}B extra={len(c.extra)}B")
@@ -57,7 +60,7 @@ async def main(args) -> None:
     found = asyncio.get_running_loop().create_future()
 
     def on_adv(device, adv):
-        if any(WITH_MARKER in u.lower() for u in adv.service_uuids) and not found.done():
+        if is_withings(adv.service_uuids, adv.service_data) and not found.done():
             found.set_result(device)
 
     async with BleakScanner(on_adv):
@@ -114,7 +117,7 @@ async def main(args) -> None:
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--app-version", type=int, default=1, help="AppProbe version field (real value TBD from the app)")
+    p.add_argument("--app-version", type=int, default=202609240, help="AppProbe version field")
     p.add_argument("--os-version", type=int, default=34, help="AppProbeOsVersion, e.g. Android API level")
     p.add_argument("--listen", type=float, default=8, help="seconds to keep listening after the last message")
     asyncio.run(main(p.parse_args()))

@@ -15,6 +15,8 @@ from pathlib import Path
 
 from bleak import BleakScanner
 
+from withings_wpp.advertisement import FD77, Fd77
+
 HINTS = ("withings", "wbs", "body", "scale", "nokia")
 # Withings WPP UUIDs look like 000000XX-5749-5448-MMMM-<id>: "5749-5448" is ASCII "WITH",
 # MMMM is the model id, and the last group may carry the device's identity MAC.
@@ -32,8 +34,12 @@ def withings_uuids(uuids) -> list[dict]:
     return out
 
 
-def is_candidate(name: str | None, uuids=()) -> bool:
-    return bool(withings_uuids(uuids)) or (bool(name) and any(h in name.lower() for h in HINTS))
+def is_candidate(name: str | None, uuids=(), service_data=None) -> bool:
+    return (
+        bool(withings_uuids(uuids))
+        or FD77 in (service_data or {})
+        or (bool(name) and any(h in name.lower() for h in HINTS))
+    )
 
 
 def raw_fields(adv) -> dict:
@@ -70,8 +76,11 @@ async def main(seconds: float, press_at: float | None) -> None:
         )
         rec["count"] += 1
         rec["withings"] = withings_uuids(rec["service_uuids"])
+        if FD77 in rec["service_data"]:
+            fd = Fd77.parse(bytes.fromhex(rec["service_data"][FD77]))
+            rec["fd77"] = fd and {k: v for k, v in vars(fd).items() if k != "fields"}
         if new:
-            flag = "  <-- candidate" if is_candidate(rec["name"], rec["service_uuids"]) else ""
+            flag = "  <-- candidate" if is_candidate(rec["name"], rec["service_uuids"], rec["service_data"]) else ""
             print(f"[{t:6.1f}s] {rec['rssi']:>4} dBm  {rec['name']!r}{flag}", flush=True)
 
     async with BleakScanner(on_adv):
@@ -86,7 +95,7 @@ async def main(seconds: float, press_at: float | None) -> None:
 
     path = OUT / f"scan-{datetime.now():%Y%m%d-%H%M%S}.json"
     path.write_text(json.dumps({"press_at": press_at, "devices": list(seen.values())}, indent=2))
-    candidates = [r for r in seen.values() if is_candidate(r["name"], r["service_uuids"])]
+    candidates = [r for r in seen.values() if is_candidate(r["name"], r["service_uuids"], r["service_data"])]
     print(f"\n{len(seen)} devices, {len(candidates)} candidate(s). Saved {path}")
     for r in candidates:
         print(json.dumps(r, indent=2))

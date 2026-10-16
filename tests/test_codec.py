@@ -66,3 +66,15 @@ def test_reader_bounds():
 def test_describe_hides_values():
     text = describe(Message(Cmd.PROBE, (Tlv(Obj.PROBE_REPLY, b"secret-ish"),)))
     assert "secret" not in text and "PROBE_REPLY[10]" in text
+
+
+def test_stored_measure_get_state():
+    from withings_wpp.messages import MeasureAction, stored_measure
+
+    assert stored_measure(MeasureAction.GET_STATE).encode() == bytes.fromhex("01 010f 0006 0114 0002 00 00")
+
+
+def test_cmd_error_parse():
+    from withings_wpp.messages import CmdError
+
+    assert str(CmdError.parse(bytes.fromhex("0101 fffffffb"))) == "cmd 257: not authenticated"

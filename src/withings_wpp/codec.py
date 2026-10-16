@@ -122,8 +122,14 @@ class Reader:
     def u8(self) -> int:
         return self._take(1)[0]
 
+    def i8(self) -> int:
+        return int.from_bytes(self._take(1), "big", signed=True)
+
     def u16(self) -> int:
         return int.from_bytes(self._take(2), "big")
+
+    def i16(self) -> int:
+        return int.from_bytes(self._take(2), "big", signed=True)
 
     def u32(self) -> int:
         return int.from_bytes(self._take(4), "big")
