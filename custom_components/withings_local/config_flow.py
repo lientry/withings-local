@@ -101,8 +101,16 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
+            email = (user_input.get(CONF_EMAIL) or "").strip()
+            password = user_input.get(CONF_PASSWORD) or ""
+            if not email and not password:
+                # Config flows have no back button: an empty submit returns to the key options.
+                return await self.async_step_key()
+            if not email or not password:
+                errors["base"] = "missing_credentials"
+        if user_input is not None and not errors:
             try:
-                kl = await fetch_kl(self.hass, user_input[CONF_EMAIL], user_input[CONF_PASSWORD], self._address)
+                kl = await fetch_kl(self.hass, email, password, self._address)
             except account.InvalidCredentials:
                 errors["base"] = "invalid_auth"
             except account.AccountError:
@@ -118,8 +126,8 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="login",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_EMAIL): TextSelector(TextSelectorConfig(type=TextSelectorType.EMAIL)),
-                    vol.Required(CONF_PASSWORD): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                    vol.Optional(CONF_EMAIL): TextSelector(TextSelectorConfig(type=TextSelectorType.EMAIL)),
+                    vol.Optional(CONF_PASSWORD): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
                 }
             ),
             errors=errors,
@@ -128,14 +136,17 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_manual(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            kl = user_input[CONF_KL].strip()
+            kl = (user_input.get(CONF_KL) or "").strip()
+            if not kl:
+                # Config flows have no back button: an empty submit returns to the key options.
+                return await self.async_step_key()
             if len(kl) < 16:
                 errors[CONF_KL] = "invalid_key"
             else:
                 return self._create(kl)
         return self.async_show_form(
             step_id="manual",
-            data_schema=vol.Schema({vol.Required(CONF_KL): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))}),
+            data_schema=vol.Schema({vol.Optional(CONF_KL): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))}),
             errors=errors,
         )
 

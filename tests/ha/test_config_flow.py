@@ -54,3 +54,17 @@ async def test_discovery_of_other_device_aborts(hass: HomeAssistant, mock_blueto
     info = service_info(name="Something else", uuid="0000180f-0000-1000-8000-00805f9b34fb")
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=info)
     assert result["type"] is FlowResultType.ABORT and result["reason"] == "not_supported"
+
+
+async def test_empty_submit_goes_back_to_key_options(hass: HomeAssistant, mock_bluetooth) -> None:
+    result = await _to_key_menu(hass)
+    # Manual key -> empty submit -> back to the menu.
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "manual"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.MENU and result["step_id"] == "key"
+    # Login -> half-filled is an error, empty goes back.
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "login"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"email": "user@example.com"})
+    assert result["errors"] == {"base": "missing_credentials"}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.MENU and result["step_id"] == "key"
