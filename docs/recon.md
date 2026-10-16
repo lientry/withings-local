@@ -40,6 +40,8 @@ Why the first scans missed it: the scale doesn't advertise when idle or after a 
 
 That is the only service. CoreBluetooth hides the standard GAP/GATT services, and no Device Information or Battery service is exposed. This matches the WPP layout reported for Withings scales: a single characteristic carries every request (write) and response (notify).
 
-Next: subscribe to `0x24`, send a PROBE, and see whether encryption or pairing is enforced at that point.
+### First PROBE (`tools/probe.py`)
+
+The scale accepted a PROBE without link encryption or pairing. It replied in setup mode with `PROBE_REPLY` and `FACTORY_STATE`, which reports firmware 1311 and bootloader 2. The details are in [protocol.md](protocol.md). The raw capture stays in `captures/`, because the reply contains the MAC and the manufacturing ID.
 
 Tooling note: macOS kills Bluetooth processes launched by the `claude` CLI (TCC: no usage description). Run Bluetooth tools with `tools/terminal_run.sh`.
