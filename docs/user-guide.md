@@ -6,7 +6,7 @@ Draft notes for end users. They will become the README / integration docs.
 
 The local integration needs the scale in **Bluetooth mode**. In Wi-Fi mode the scale uploads straight to Withings and never announces new readings over Bluetooth.
 
-> **Wi-Fi mode is not supported.** We tested it: after a weigh-in in Wi-Fi mode the scale stays silent on Bluetooth. Another project, [esphome-withings-wpp](https://github.com/NavistAuLabs/esphome-withings-wpp), reports that Wi-Fi mode keeps working after a one-time passkey pairing from an ESP32. Home Assistant can't do that kind of pairing from an integration today. If you need the Withings cloud and local data at the same time, that project is the option.
+> **Wi-Fi mode is not supported.** We tested it: after a weigh-in in Wi-Fi mode, an unpaired scale stays silent on Bluetooth. Another project, [esphome-withings-wpp](https://github.com/NavistAuLabs/esphome-withings-wpp), reports that Wi-Fi mode keeps working after a one-time passkey pairing from an ESP32. This integration pairs with the scale too (since 0.3.0), but whether a paired scale in Wi-Fi mode advertises after a weigh-in is untested here. If you need the Withings cloud and local data at the same time, that project is the known option.
 
 Tested on a Body Smart (WBS13), Withings app 26.40.
 

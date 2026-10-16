@@ -238,7 +238,10 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
             _LOGGER.debug("%s: session without authentication (button press?), nothing to read", self.title)
             return self.data
         if not result.scale_verified:
-            _LOGGER.warning("%s: the scale did not prove it knows the key; check the configured kl", self.title)
+            # A device that fails our challenge doesn't know kl: don't record what it sends
+            # (anyone in range can copy the advertisement). A real scale always passes.
+            _LOGGER.warning("%s: the device did not prove it knows the key; ignoring its readings", self.title)
+            return self.data
 
         users = dict(self.data.users)
         for user_id, weigh_in in latest_per_user(result.groups).items():

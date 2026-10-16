@@ -86,10 +86,13 @@ async def test_unnamed_advertisement_gets_readable_title(hass: HomeAssistant, mo
 
 
 class FakeSession:
-    def __init__(self, accept=True, already_paired=False):
+    def __init__(self, accept=True, already_paired=False, start_error=None):
         self.accept, self.already, self.code, self.closed = accept, already_paired, None, False
+        self.start_error = start_error
 
     async def start(self):
+        if self.start_error is not None:
+            raise self.start_error
         return self.already
 
     async def wait_for_passkey_request(self):
@@ -172,6 +175,14 @@ async def test_wrong_code_offers_retry(hass: HomeAssistant, mock_bluetooth) -> N
     result = await _run_pair_now(hass, await _to_pair_menu(hass), _pairing_patches(FakeSession(accept=False)))
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"passkey": "000000"})
     assert result["type"] is FlowResultType.MENU and result["step_id"] == "pair_failed"
+
+
+async def test_unexpected_pairing_error_offers_retry(hass: HomeAssistant, mock_bluetooth) -> None:
+    # e.g. no system D-Bus: not a PairingFailed, but the user still gets the retry menu, not "unknown error".
+    session = FakeSession(start_error=OSError("no system bus"))
+    result = await _run_pair_now(hass, await _to_pair_menu(hass), _pairing_patches(session))
+    assert result["type"] is FlowResultType.MENU and result["step_id"] == "pair_failed"
+    assert "no system bus" in result["description_placeholders"]["error"] and session.closed
 
 
 async def test_scale_not_in_setup_mode_times_out(hass: HomeAssistant, mock_bluetooth) -> None:

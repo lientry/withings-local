@@ -1,9 +1,14 @@
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.withings_local.coordinator import has_new_data, latest_per_user
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.withings_local.const import CONF_KL, DOMAIN
+from custom_components.withings_local.coordinator import WithingsScaleCoordinator, has_new_data, latest_per_user
+from custom_components.withings_local.withings_wpp.client import SyncResult
 from custom_components.withings_local.withings_wpp.measures import Measure, MeasureGroup
 
-from .conftest import SETUP_UUID, service_info
+from .conftest import ADDRESS, SETUP_UUID, TEST_KL, service_info
 
 ALICE, BOB = 1001, 1002  # synthetic user IDs
 
@@ -66,3 +71,32 @@ def test_setup_mode_detected_despite_merged_weigh_in_data() -> None:
     merged.service_uuids.append(INSTALLED_UUID)  # stale weigh-in UUID
     assert is_setup_mode(merged)
     assert not is_setup_mode(service_info())  # only a weigh-in advertisement
+
+
+async def test_sync_ignores_readings_from_unverified_scale(hass, mock_bluetooth) -> None:
+    """The device fails our challenge: nothing is recorded."""
+    entry = MockConfigEntry(domain=DOMAIN, title="Body Smart", data={"address": ADDRESS, CONF_KL: TEST_KL})
+    entry.add_to_hass(hass)  # a successful sync stores the users it saw on the entry
+    coordinator = WithingsScaleCoordinator(hass, entry)
+    when = datetime(2026, 1, 2, tzinfo=UTC)
+    group = MeasureGroup(when, [ALICE], 0, 0, [Measure(1, 70.0)])
+
+    def result(verified: bool) -> SyncResult:
+        return SyncResult(True, verified, 2, 1311, [group], battery=80)
+
+    client = MagicMock(disconnect=AsyncMock())
+    with (
+        patch("custom_components.withings_local.coordinator.establish_connection", AsyncMock(return_value=client)),
+        patch("custom_components.withings_local.coordinator.WppSession"),
+        patch("custom_components.withings_local.coordinator.read_measurements", AsyncMock(return_value=result(False))),
+    ):
+        data = await coordinator._async_sync(service_info())  # noqa: SLF001
+    assert data.users == {} and data.battery is None and data.last_sync is None
+
+    with (
+        patch("custom_components.withings_local.coordinator.establish_connection", AsyncMock(return_value=client)),
+        patch("custom_components.withings_local.coordinator.WppSession"),
+        patch("custom_components.withings_local.coordinator.read_measurements", AsyncMock(return_value=result(True))),
+    ):
+        data = await coordinator._async_sync(service_info())  # noqa: SLF001
+    assert data.users[ALICE].values == {"weight": 70.0} and data.battery == 80

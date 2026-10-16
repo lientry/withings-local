@@ -222,6 +222,11 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
             self._pair_error = str(err)
             await self._async_close_pairing()
             return self.async_show_progress_done(next_step_id="pair_failed")
+        except Exception as err:  # noqa: BLE001 - e.g. the system D-Bus is unreachable; offer a retry, not "unknown error"
+            _LOGGER.exception("Pairing with the scale failed unexpectedly")
+            self._pair_error = f"{type(err).__name__}: {err}"
+            await self._async_close_pairing()
+            return self.async_show_progress_done(next_step_id="pair_failed")
         if already_paired:
             await self._async_close_pairing()
             return self.async_show_progress_done(next_step_id="pair_finish")

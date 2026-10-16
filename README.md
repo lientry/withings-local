@@ -2,7 +2,7 @@
 
 Read measurements from a Withings smart scale over Bluetooth LE, locally, without the Withings cloud, and use them in Home Assistant.
 
-> **Status: working prototype.** It reads weigh-ins from a Body Smart (WBS13), and the values match the Withings app. The Home Assistant integration is new and not yet tested on a real installation.
+> **Status: working, early.** It reads weigh-ins from a Body Smart (WBS13), and the values match the Withings app. The Home Assistant integration runs in the author's installation (Home Assistant OS on a Raspberry Pi 4, local Bluetooth adapter). Other setups are untested; see the [changelog](CHANGELOG.md) for known limitations.
 
 ## What's here
 
@@ -25,8 +25,8 @@ The scale's own device shows battery level and the last sync.
 ## How it works
 
 1. After a weigh-in, the scale advertises over Bluetooth for a short time.
-2. Home Assistant connects through a local adapter or an ESPHome Bluetooth proxy.
-3. It proves it knows the scale's key (`kl`), then reads the stored measurements.
+2. Home Assistant connects through a Bluetooth adapter it has paired with the scale once (6-digit code, done during setup). ESPHome Bluetooth proxies can't pair with a code yet, so a local adapter is needed.
+3. It proves it knows the scale's key (`kl`), and the scale proves it knows it too, then it reads the stored measurements.
 4. Nothing is deleted, so the Withings app still syncs the same readings when your phone is nearby.
 
 You get `kl` once, from your own Withings account: the integration's setup can fetch it with your login, or you can paste it.

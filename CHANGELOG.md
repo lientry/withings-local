@@ -4,6 +4,12 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+### Changed
+- Readings are ignored when the device fails to prove it knows the key (mutual authentication). Before, they were recorded with a warning. A real scale always passes this check; a device impersonating the scale's advertisement can't.
+
+### Fixed
+- An unexpected error during pairing (for example when the system D-Bus can't be reached) shows the "Pairing failed" step with the error and a retry, instead of "Unknown error".
+
 ## [0.3.0] - 2026-10-16
 
 ### Added
