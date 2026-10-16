@@ -23,7 +23,8 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/pierosavi/withings-local/issues",
   "loggers": [
-    "custom_components.withings_local"
+    "custom_components.withings_local",
+    "bleak_retry_connector"
   ],
   "requirements": [],
   "version": "0.2.2"

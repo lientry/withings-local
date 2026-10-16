@@ -50,6 +50,10 @@ class AuthenticationError(Exception):
     pass
 
 
+class ScaleDisconnected(Exception):
+    """The scale dropped the Bluetooth link mid-session."""
+
+
 def find_wpp_characteristic(client: BleakClient) -> BleakGATTCharacteristic:
     for service in client.services:
         for char in service.characteristics:
@@ -74,12 +78,32 @@ class WppSession:
         self._reasm = Reassembler()
         self._inbox: asyncio.Queue[Message] = asyncio.Queue()
         self._trace = trace or (lambda direction, raw: None)
+        self._disconnected = asyncio.Event()
+
+    def mark_disconnected(self) -> None:
+        """Call from the client's disconnect callback: pending operations then fail at once."""
+        self._disconnected.set()
+
+    async def _until_disconnect(self, aw, what: str):
+        """Await `aw`, but raise as soon as the scale drops the link (some Bluetooth stacks
+        leave the pending call hanging instead of failing it)."""
+        task = asyncio.ensure_future(aw)
+        gone = asyncio.ensure_future(self._disconnected.wait())
+        try:
+            done, _ = await asyncio.wait({task, gone}, return_when=asyncio.FIRST_COMPLETED)
+            if task in done:
+                return task.result()
+            raise ScaleDisconnected(f"the scale disconnected while {what}")
+        finally:
+            for t in (task, gone):
+                if not t.done():
+                    t.cancel()
 
     async def start(self) -> None:
         _LOGGER.debug("subscribing to notifications on %s", self._char.uuid)
         try:
             async with asyncio.timeout(SUBSCRIBE_TIMEOUT):
-                await self._client.start_notify(self._char, self._on_notify)
+                await self._until_disconnect(self._client.start_notify(self._char, self._on_notify), "subscribing")
         except TimeoutError as err:
             raise TimeoutError(
                 f"subscribing to notifications took more than {SUBSCRIBE_TIMEOUT:.0f}s "
@@ -110,7 +134,7 @@ class WppSession:
         _LOGGER.debug("-> %s", describe(msg))
         self._trace("tx", raw)
         async with asyncio.timeout(WRITE_TIMEOUT):
-            await self._client.write_gatt_char(self._char, raw, response=True)
+            await self._until_disconnect(self._client.write_gatt_char(self._char, raw, response=True), "writing")
 
     async def request(self, msg: Message, *, multi: bool = False, timeout: float = 5.0) -> list[Message]:
         """Send and collect the reply. Multi-message replies end with a Null TLV."""
@@ -124,7 +148,8 @@ class WppSession:
                 if replies:
                     return replies
                 raise TimeoutError(f"no reply to command {msg.command}")
-            reply = await asyncio.wait_for(self._inbox.get(), remaining)
+            async with asyncio.timeout(remaining):
+                reply = await self._until_disconnect(self._inbox.get(), "waiting for a reply")
             if reply.base_command == Cmd.ERROR:
                 (tlv,) = reply.find(Obj.CMD_ERROR) or (None,)
                 if tlv is not None:
@@ -198,9 +223,12 @@ class SyncResult:
     battery: int | None = None
 
 
-async def read_measurements(ble: BleakClient, kl: str) -> SyncResult:
-    """Run one read-only session on a connected client: authenticate, read, disconnect."""
-    session = WppSession(ble)
+async def read_measurements(ble: BleakClient, kl: str, session: WppSession | None = None) -> SyncResult:
+    """Run one read-only session on a connected client: authenticate, read, disconnect.
+
+    Pass a pre-built `session` to wire its `mark_disconnected` into the client's disconnect callback.
+    """
+    session = session or WppSession(ble)
     await session.start()
     scale = ScaleClient(session)
     auth_result = await scale.authenticate(kl)

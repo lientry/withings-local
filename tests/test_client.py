@@ -44,3 +44,19 @@ async def test_missing_reply_times_out():
     await session.start()
     with pytest.raises(TimeoutError):
         await session.request(wpp_client.probe(), timeout=0.05)
+
+
+async def test_disconnect_fails_pending_subscribe_immediately():
+    session = wpp_client.WppSession(FakeClient(hang_subscribe=True))
+    asyncio.get_running_loop().call_later(0.01, session.mark_disconnected)
+    with pytest.raises(wpp_client.ScaleDisconnected, match="subscribing"):
+        async with asyncio.timeout(1):  # must not wait for the 15 s subscribe timeout
+            await session.start()
+
+
+async def test_disconnect_fails_pending_reply_immediately():
+    session = wpp_client.WppSession(FakeClient())
+    await session.start()
+    asyncio.get_running_loop().call_later(0.01, session.mark_disconnected)
+    with pytest.raises(wpp_client.ScaleDisconnected, match="reply"):
+        await session.request(wpp_client.probe(), timeout=1)

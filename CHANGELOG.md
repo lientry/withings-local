@@ -4,6 +4,12 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+### Fixed
+- When the scale drops the Bluetooth link mid-session, the sync fails at once and retries on the next advertisement, instead of waiting for a timeout. Linux (BlueZ) leaves the pending call hanging in this case.
+
+### Changed
+- "Enable debug logging" also shows the connection retry library's attempts (`bleak_retry_connector`).
+
 ## [0.2.2] - 2026-10-16
 
 ### Fixed

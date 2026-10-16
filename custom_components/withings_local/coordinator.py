@@ -11,7 +11,7 @@ import time
 
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from .withings_wpp.advertisement import WithingsUuid
-from .withings_wpp.client import read_measurements
+from .withings_wpp.client import WppSession, read_measurements
 from .withings_wpp.measures import MeasureGroup, merge_by_time
 
 from homeassistant.components import bluetooth
@@ -150,8 +150,12 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
         device = bluetooth.async_ble_device_from_address(self.hass, service_info.address, connectable=True)
         started = time.monotonic()
         step = "connecting"
+        session: WppSession | None = None
+
         def on_disconnect(_client) -> None:
             _LOGGER.debug("%s: scale disconnected after %.1fs", self.title, time.monotonic() - started)
+            if session is not None:
+                session.mark_disconnected()
 
         try:
             client = await establish_connection(
@@ -165,8 +169,9 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
             _LOGGER.debug("%s: connected after %.1fs", self.title, time.monotonic() - started)
             try:
                 # A stuck session must never block later syncs.
+                session = WppSession(client)
                 async with asyncio.timeout(SESSION_TIMEOUT_SECONDS):
-                    result = await read_measurements(client, self._kl)
+                    result = await read_measurements(client, self._kl, session)
             finally:
                 await client.disconnect()
         except Exception as err:
