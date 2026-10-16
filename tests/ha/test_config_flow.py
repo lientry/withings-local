@@ -112,17 +112,19 @@ async def _to_pair_menu(hass):
     return await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_KL: TEST_KL})
 
 
-def _pairing_patches(session=None, wait_error=None, path_error=None):
+def _pairing_patches(session=None, never_advertise=False, path_error=None):
     from .conftest import SETUP_UUID
 
-    async def fake_wait(hass, callback, matcher, mode, timeout):
-        if wait_error:
-            raise wait_error
-        info = service_info(uuid=SETUP_UUID, mfr=b"\x00\x00\x00\x00")
-        info.time = 1e12  # fresh
-        assert callback(info)  # a setup-mode advertisement passes the filter
-        assert not callback(service_info())  # a weigh-in advertisement doesn't
-        return info
+    def fake_register(hass, callback, address):
+        """Like HA's every-advertisement callback: fires for unchanged data too."""
+        if not never_advertise:
+            weigh_in = service_info()
+            weigh_in.time = 1e12
+            setup = service_info(uuid=SETUP_UUID, mfr=b"\x00\x00\x00\x00")
+            setup.time = 1e12
+            hass.loop.call_soon(callback, weigh_in)  # ignored: not setup mode
+            hass.loop.call_soon(callback, setup)  # accepted
+        return lambda: None
 
     path = patch(
         "custom_components.withings_local.config_flow.device_path",
@@ -130,7 +132,7 @@ def _pairing_patches(session=None, wait_error=None, path_error=None):
         return_value="/org/bluez/hci0/dev_00_11_22_33_44_55",
     )
     return (
-        patch("custom_components.withings_local.config_flow.bluetooth.async_process_advertisements", fake_wait),
+        patch("custom_components.withings_local.config_flow.bluetooth.async_register_advertisement_callback", fake_register),
         path,
         patch("custom_components.withings_local.config_flow.PairingSession", return_value=session or FakeSession()),
     )
@@ -173,7 +175,8 @@ async def test_wrong_code_offers_retry(hass: HomeAssistant, mock_bluetooth) -> N
 
 
 async def test_scale_not_in_setup_mode_times_out(hass: HomeAssistant, mock_bluetooth) -> None:
-    result = await _run_pair_now(hass, await _to_pair_menu(hass), _pairing_patches(wait_error=TimeoutError()))
+    with patch("custom_components.withings_local.config_flow.PAIRING_ADVERTISEMENT_TIMEOUT", 0.05):
+        result = await _run_pair_now(hass, await _to_pair_menu(hass), _pairing_patches(never_advertise=True))
     assert result["type"] is FlowResultType.MENU and result["step_id"] == "pair_timeout"
 
 

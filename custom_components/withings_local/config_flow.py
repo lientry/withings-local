@@ -16,6 +16,7 @@ from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, async_discovered_service_info
 from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_RECONFIGURE, ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS, CONF_EMAIL, CONF_PASSWORD
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
@@ -228,21 +229,41 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_start_pairing(self) -> bool:
         """Return True when the scale is already paired (no code needed)."""
-        assert self._address is not None
-        started = monotonic_time_coarse()
-        service_info = await bluetooth.async_process_advertisements(
-            self.hass,
-            # A fresh setup-mode advertisement: a cached one would start the code timer too early.
-            lambda info: info.time >= started and is_setup_mode(info),
-            {"address": self._address, "connectable": True},
-            bluetooth.BluetoothScanningMode.ACTIVE,
-            PAIRING_ADVERTISEMENT_TIMEOUT,
-        )
+        service_info = await self._async_wait_for_setup_mode()
+        _LOGGER.info("%s: setup-mode signal received via %s, requesting pairing", self._name, service_info.source)
         self._pairing = PairingSession(device_path(self.hass, service_info))
         if await self._pairing.start():
+            _LOGGER.info("%s: already paired with this Home Assistant", self._name)
             return True
         await self._pairing.wait_for_passkey_request()
+        _LOGGER.info("%s: the scale shows its code; waiting for the user to enter it", self._name)
         return False
+
+    async def _async_wait_for_setup_mode(self) -> BluetoothServiceInfoBleak:
+        """Wait for a fresh setup-mode advertisement (button held 3 s).
+
+        Uses the every-advertisement callback: the setup-mode advertisement is identical each
+        time, and the change-only callbacks would never report it again.
+        """
+        assert self._address is not None
+        _LOGGER.info("%s: waiting up to %ss for the setup-mode signal", self._name, PAIRING_ADVERTISEMENT_TIMEOUT)
+        found: asyncio.Future[BluetoothServiceInfoBleak] = self.hass.loop.create_future()
+        started = monotonic_time_coarse()
+
+        @callback
+        def _on_advertisement(info: BluetoothServiceInfoBleak) -> None:
+            if not found.done() and info.connectable and info.time >= started and is_setup_mode(info):
+                found.set_result(info)
+
+        cancel = bluetooth.async_register_advertisement_callback(self.hass, _on_advertisement, self._address)
+        try:
+            async with asyncio.timeout(PAIRING_ADVERTISEMENT_TIMEOUT):
+                return await found
+        except TimeoutError:
+            _LOGGER.info("%s: no setup-mode signal within %ss", self._name, PAIRING_ADVERTISEMENT_TIMEOUT)
+            raise
+        finally:
+            cancel()
 
     async def async_step_passkey(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Ask for the 6-digit code shown on the scale."""
@@ -260,6 +281,7 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._pair_error = str(err)
                     await self._async_close_pairing()
                     return await self.async_step_pair_failed()
+                _LOGGER.info("%s: paired", self._name)
                 await self._async_close_pairing()
                 return await self.async_step_pair_finish()
         return self.async_show_form(
