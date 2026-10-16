@@ -12,6 +12,7 @@ from dataclasses import dataclass
 API = "https://scalews.withings.net/cgi-bin"
 LOGIN_URL = f"{API}/auth"
 ASSOCIATION_URL = f"{API}/association"
+ACCOUNT_URL = f"{API}/account"
 COMMON = {"appname": "wiscale", "apppfm": "android", "appliver": "202609240"}
 BODY_SMART_MODEL = 16
 
@@ -34,6 +35,7 @@ class ScaleSecret:
     model: int | None
     mac: str | None
     kl: str
+    accountid: int | None = None
 
 
 def login_params(email: str, password: str) -> dict:
@@ -55,6 +57,19 @@ def logout_params(session: str) -> dict:
 
 def association_params(session: str) -> dict:
     return {**COMMON, "action": "getbyaccountid", "sessionid": session, "type": -1, "enrich": "t"}
+
+
+def users_params(session: str, accountid: int) -> dict:
+    return {
+        **COMMON,
+        "action": "getuserslist",
+        "sessionid": session,
+        "accountid": accountid,
+        "recurse_use": 1,
+        "recurse_devtype": 1,
+        "listmask": 5,
+        "allusers": "t",
+    }
 
 
 def _find(obj, key):
@@ -88,5 +103,19 @@ def parse_scales(resp: dict, model: int | None = BODY_SMART_MODEL) -> list[Scale
         m = props.get("model", props.get("modelid"))
         m = int(m) if m is not None and str(m).isdigit() else None
         if e.get("kl") and (model is None or m == model):
-            scales.append(ScaleSecret(e.get("deviceid"), m, props.get("macaddress") or props.get("mac"), e["kl"]))
+            scales.append(
+                ScaleSecret(e.get("deviceid"), m, props.get("macaddress") or props.get("mac"), e["kl"], e.get("accountid"))
+            )
     return scales
+
+
+def parse_users(resp: dict) -> dict[int, str]:
+    """Map Withings user IDs to first names (the IDs the scale tags weigh-ins with)."""
+    if resp.get("status") != 0:
+        raise AccountError("could not list users", resp.get("status"))
+    users = {}
+    for found in _find(resp, "users"):
+        for u in found if isinstance(found, list) else [found]:
+            if isinstance(u, dict) and u.get("id") is not None:
+                users[int(u["id"])] = (u.get("firstname") or "").strip() or f"User {u['id']}"
+    return users

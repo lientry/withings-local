@@ -43,10 +43,11 @@ async def test_bluetooth_discovery_login(hass: HomeAssistant, mock_bluetooth) ->
     with patch(FETCH, side_effect=account.AccountError("none")):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], creds)
     assert result["errors"] == {"base": "no_scale"}
-    with patch(FETCH, return_value=TEST_KL), patch("custom_components.withings_local.async_setup_entry", return_value=True):
+    with patch(FETCH, return_value=(TEST_KL, {"1001": "Alice"})), patch("custom_components.withings_local.async_setup_entry", return_value=True):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], creds)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_KL] == TEST_KL
+    assert result["data"]["users"] == {"1001": "Alice"}
     assert "email" not in result["data"] and "password" not in result["data"]
 
 

@@ -9,10 +9,10 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_KL
+from .const import CONF_KL, CONF_USERS
 from .coordinator import WITHINGS_COMPANY_ID, WithingsLocalConfigEntry, has_new_data
 
-TO_REDACT = {CONF_KL, CONF_ADDRESS}
+TO_REDACT = {CONF_KL, CONF_ADDRESS, CONF_USERS}
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: WithingsLocalConfigEntry) -> dict[str, Any]:
@@ -39,8 +39,16 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Withing
             "new_data": has_new_data(info),
         },
         "last_poll_successful": coordinator.last_poll_successful,
-        "measured_at": data.measured_at.isoformat() if data.measured_at else None,
+        "users": [
+            {
+                "index": i,
+                "guest": uid == 0,
+                "measured_at": data.users[uid].measured_at.isoformat() if uid in data.users else None,
+                "measurement_types": sorted(data.users[uid].values) if uid in data.users else [],
+            }
+            for i, uid in enumerate(coordinator.known_users)
+        ],
         "last_sync": data.last_sync.isoformat() if data.last_sync else None,
-        "measurement_types": sorted(data.values),
+        "battery": data.battery,
         "firmware": data.firmware,
     }

@@ -17,7 +17,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
-from .const import BODY_SMART_MODEL_ID, CONF_KL, DOMAIN, LOCAL_NAME_PREFIX
+from .const import BODY_SMART_MODEL_ID, CONF_KL, CONF_USERS, DOMAIN, LOCAL_NAME_PREFIX
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,8 +28,12 @@ def is_body_smart(info: BluetoothServiceInfoBleak) -> bool:
     return any((w := WithingsUuid.parse(u)) and w.model_id == BODY_SMART_MODEL_ID for u in info.service_uuids)
 
 
-async def fetch_kl(hass, email: str, password: str, address: str) -> str:
-    """Log in to the user's Withings account and return the scale's kl. Nothing is stored."""
+async def fetch_kl(hass, email: str, password: str, address: str) -> tuple[str, dict[str, str]]:
+    """Log in to the Withings account; return the scale's kl and {user id: first name}.
+
+    Credentials are used once and not stored. User names are optional: failure to list them
+    is not an error (users then show as "User 1", "User 2", ...).
+    """
     http = async_get_clientsession(hass)
 
     async def post(url: str, params: dict) -> dict:
@@ -38,8 +42,15 @@ async def fetch_kl(hass, email: str, password: str, address: str) -> str:
             return await resp.json(content_type=None)
 
     session = account.parse_login(await post(account.LOGIN_URL, account.login_params(email, password)))
+    users: dict[str, str] = {}
     try:
         scales = account.parse_scales(await post(account.ASSOCIATION_URL, account.association_params(session)))
+        if scales and scales[0].accountid:
+            try:
+                names = account.parse_users(await post(account.ACCOUNT_URL, account.users_params(session, scales[0].accountid)))
+                users = {str(uid): name for uid, name in names.items()}
+            except (account.AccountError, aiohttp.ClientError, TimeoutError):
+                _LOGGER.debug("Could not list Withings users; names will be generic", exc_info=True)
     finally:
         try:
             await post(account.LOGIN_URL, account.logout_params(session))
@@ -48,7 +59,8 @@ async def fetch_kl(hass, email: str, password: str, address: str) -> str:
     if not scales:
         raise account.AccountError("no Body Smart on this account")
     # On Linux the Bluetooth address is the scale's MAC; prefer the matching association.
-    return next((s.kl for s in scales if s.mac and format_mac(s.mac) == format_mac(address)), scales[0].kl)
+    kl = next((s.kl for s in scales if s.mac and format_mac(s.mac) == format_mac(address)), scales[0].kl)
+    return kl, users
 
 
 class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -110,7 +122,7 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "missing_credentials"
         if user_input is not None and not errors:
             try:
-                kl = await fetch_kl(self.hass, email, password, self._address)
+                kl, users = await fetch_kl(self.hass, email, password, self._address)
             except account.InvalidCredentials:
                 errors["base"] = "invalid_auth"
             except account.AccountError:
@@ -121,7 +133,7 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error fetching the scale key")
                 errors["base"] = "unknown"
             else:
-                return self._create(kl)
+                return self._create(kl, users)
         return self.async_show_form(
             step_id="login",
             data_schema=vol.Schema(
@@ -150,6 +162,9 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    def _create(self, kl: str) -> ConfigFlowResult:
+    def _create(self, kl: str, users: dict[str, str] | None = None) -> ConfigFlowResult:
         assert self._address is not None
-        return self.async_create_entry(title=self._name or LOCAL_NAME_PREFIX, data={CONF_ADDRESS: self._address, CONF_KL: kl})
+        data = {CONF_ADDRESS: self._address, CONF_KL: kl}
+        if users:
+            data[CONF_USERS] = users
+        return self.async_create_entry(title=self._name or LOCAL_NAME_PREFIX, data=data)

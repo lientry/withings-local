@@ -53,6 +53,11 @@ class MeasureGroup:
     def value(self, name: str) -> float | None:
         return next((m.value for m in self.measures if m.name == name), None)
 
+    @property
+    def user_id(self) -> int:
+        """The Withings user this weigh-in is attributed to, or 0 when the scale didn't know."""
+        return next((u for u in self.user_ids if u), 0)
+
 
 def parse_meta(value: bytes) -> MeasureGroup:
     """STORED_MEASURE_META: uid u32, valid u8, ids u8-length array of u32, attrib u8, time u32.
@@ -78,14 +83,14 @@ def parse_data(value: bytes) -> Measure:
 
 
 def merge_by_time(groups: list[MeasureGroup]) -> list[MeasureGroup]:
-    """One group per timestamp with one value per measure type, oldest first.
+    """One group per (timestamp, user) with one value per measure type, oldest first.
 
     The scale returns its whole store on every sync, and one weigh-in arrives as several groups
     (e.g. body composition and heart rate) sharing a timestamp.
     """
-    merged: dict[datetime, MeasureGroup] = {}
+    merged: dict[tuple[datetime, int], MeasureGroup] = {}
     for g in groups:
-        m = merged.setdefault(g.time, MeasureGroup(g.time, g.user_ids, g.attrib, g.uid))
+        m = merged.setdefault((g.time, g.user_id), MeasureGroup(g.time, g.user_ids, g.attrib, g.uid))
         by_type = {x.type: x for x in m.measures} | {x.type: x for x in g.measures}
         m.measures = list(by_type.values())
         m.unknown_tlvs = sorted(set(m.unknown_tlvs) | set(g.unknown_tlvs))

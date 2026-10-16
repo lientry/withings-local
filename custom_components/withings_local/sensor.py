@@ -1,4 +1,4 @@
-"""Measurement sensors for the latest weigh-in."""
+"""Sensors: each user's latest weigh-in, plus scale-level diagnostics."""
 
 from __future__ import annotations
 
@@ -17,40 +17,44 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN
-from .coordinator import ScaleData, WithingsLocalConfigEntry, WithingsScaleCoordinator
+from .const import CONF_USERS, DOMAIN, GUEST_USER_ID
+from .coordinator import ScaleData, WeighIn, WithingsLocalConfigEntry, WithingsScaleCoordinator
 
 
 @dataclass(frozen=True, kw_only=True)
-class WithingsSensorDescription(SensorEntityDescription):
+class UserSensorDescription(SensorEntityDescription):
+    value_fn: Callable[[WeighIn], float | datetime | None]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScaleSensorDescription(SensorEntityDescription):
     value_fn: Callable[[ScaleData], float | datetime | None]
 
 
-def _measure(name: str) -> Callable[[ScaleData], float | None]:
-    return lambda data: data.values.get(name)
+def _measure(name: str) -> Callable[[WeighIn], float | None]:
+    return lambda weigh_in: weigh_in.values.get(name)
 
 
-def _mass(key: str, precision: int = 2, enabled: bool = True) -> WithingsSensorDescription:
-    return WithingsSensorDescription(
+def _mass(key: str) -> UserSensorDescription:
+    return UserSensorDescription(
         key=key,
         translation_key=key,
         device_class=SensorDeviceClass.WEIGHT,
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=precision,
-        entity_registry_enabled_default=enabled,
+        suggested_display_precision=2,
         value_fn=_measure(key),
     )
 
 
-SENSORS: tuple[WithingsSensorDescription, ...] = (
+USER_SENSORS: tuple[UserSensorDescription, ...] = (
     _mass("weight"),
     _mass("fat_mass"),
     _mass("fat_free_mass"),
     _mass("muscle_mass"),
     _mass("bone_mass"),
     _mass("hydration"),
-    WithingsSensorDescription(
+    UserSensorDescription(
         key="fat_ratio",
         translation_key="fat_ratio",
         native_unit_of_measurement=PERCENTAGE,
@@ -58,14 +62,14 @@ SENSORS: tuple[WithingsSensorDescription, ...] = (
         suggested_display_precision=1,
         value_fn=_measure("fat_ratio"),
     ),
-    WithingsSensorDescription(
+    UserSensorDescription(
         key="visceral_fat",
         translation_key="visceral_fat",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=_measure("visceral_fat"),
     ),
-    WithingsSensorDescription(
+    UserSensorDescription(
         key="basal_metabolic_rate",
         translation_key="basal_metabolic_rate",
         native_unit_of_measurement=UnitOfEnergy.KILO_CALORIE,
@@ -73,7 +77,7 @@ SENSORS: tuple[WithingsSensorDescription, ...] = (
         suggested_display_precision=0,
         value_fn=_measure("basal_metabolic_rate"),
     ),
-    WithingsSensorDescription(
+    UserSensorDescription(
         key="metabolic_age",
         translation_key="metabolic_age",
         native_unit_of_measurement=UnitOfTime.YEARS,
@@ -81,7 +85,7 @@ SENSORS: tuple[WithingsSensorDescription, ...] = (
         suggested_display_precision=0,
         value_fn=_measure("metabolic_age"),
     ),
-    WithingsSensorDescription(
+    UserSensorDescription(
         key="heart_rate",
         translation_key="heart_rate",
         native_unit_of_measurement="bpm",
@@ -89,13 +93,16 @@ SENSORS: tuple[WithingsSensorDescription, ...] = (
         suggested_display_precision=0,
         value_fn=_measure("heart_rate"),
     ),
-    WithingsSensorDescription(
+    UserSensorDescription(
         key="measured_at",
         translation_key="measured_at",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=lambda data: data.measured_at,
+        value_fn=lambda weigh_in: weigh_in.measured_at,
     ),
-    WithingsSensorDescription(
+)
+
+SCALE_SENSORS: tuple[ScaleSensorDescription, ...] = (
+    ScaleSensorDescription(
         key="battery",
         device_class=SensorDeviceClass.BATTERY,
         native_unit_of_measurement=PERCENTAGE,
@@ -103,7 +110,7 @@ SENSORS: tuple[WithingsSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: data.battery,
     ),
-    WithingsSensorDescription(
+    ScaleSensorDescription(
         key="last_sync",
         translation_key="last_sync",
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -113,37 +120,44 @@ SENSORS: tuple[WithingsSensorDescription, ...] = (
 )
 
 
+# A guest weigh-in carries no user ID and only a weight.
+GUEST_SENSOR_KEYS = {"weight", "measured_at"}
+
+
+def user_display_name(entry: WithingsLocalConfigEntry, user_id: int, index: int) -> str:
+    if user_id == GUEST_USER_ID:
+        return "Guest"
+    return (entry.data.get(CONF_USERS) or {}).get(str(user_id)) or f"User {index + 1}"
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: WithingsLocalConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities(WithingsScaleSensor(coordinator, description) for description in SENSORS)
+    async_add_entities(ScaleSensor(coordinator, d) for d in SCALE_SENSORS)
+
+    @callback
+    def add_users(user_ids: list[int]) -> None:
+        async_add_entities(
+            UserSensor(coordinator, d, user_id, user_display_name(entry, user_id, coordinator.known_users.index(user_id)))
+            for user_id in user_ids
+            for d in USER_SENSORS
+            if user_id != GUEST_USER_ID or d.key in GUEST_SENSOR_KEYS
+        )
+
+    add_users(coordinator.known_users)
+    entry.async_on_unload(coordinator.async_add_new_user_listener(add_users))
 
 
-class WithingsScaleSensor(RestoreSensor):
-    """A value from the latest weigh-in.
-
-    The scale only advertises right after a weigh-in, so availability follows "do we have a
-    value", not Bluetooth presence. Values survive restarts.
-    """
+class _WithingsSensor(RestoreSensor):
+    """Keeps its last value: the scale only advertises right after a weigh-in, so availability
+    means "we have a reading", not "the scale is in Bluetooth range"."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    entity_description: WithingsSensorDescription
 
-    def __init__(self, coordinator: WithingsScaleCoordinator, description: WithingsSensorDescription) -> None:
+    def __init__(self, coordinator: WithingsScaleCoordinator) -> None:
         self.coordinator = coordinator
-        self.entity_description = description
-        address = coordinator.address
-        self._attr_unique_id = f"{address}-{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, address)},
-            connections={(CONNECTION_BLUETOOTH, address)},
-            name=coordinator.title,
-            manufacturer="Withings",
-            model="Body Smart",
-            model_id="WBS13",
-        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -157,11 +171,60 @@ class WithingsScaleSensor(RestoreSensor):
         self._update_from_coordinator()
         self.async_write_ha_state()
 
+    def _current_value(self) -> float | datetime | None:
+        raise NotImplementedError
+
     def _update_from_coordinator(self) -> None:
-        value = self.entity_description.value_fn(self.coordinator.data)
-        if value is not None:
+        if (value := self._current_value()) is not None:
             self._attr_native_value = value
 
     @property
     def available(self) -> bool:
         return self._attr_native_value is not None
+
+
+def _scale_device(coordinator: WithingsScaleCoordinator) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, coordinator.address)},
+        connections={(CONNECTION_BLUETOOTH, coordinator.address)},
+        name=coordinator.title,
+        manufacturer="Withings",
+        model="Body Smart",
+        model_id="WBS13",
+    )
+
+
+class ScaleSensor(_WithingsSensor):
+    entity_description: ScaleSensorDescription
+
+    def __init__(self, coordinator: WithingsScaleCoordinator, description: ScaleSensorDescription) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._attr_unique_id = f"{coordinator.address}-{description.key}"
+        self._attr_device_info = _scale_device(coordinator)
+
+    def _current_value(self) -> float | datetime | None:
+        return self.entity_description.value_fn(self.coordinator.data)
+
+
+class UserSensor(_WithingsSensor):
+    entity_description: UserSensorDescription
+
+    def __init__(
+        self, coordinator: WithingsScaleCoordinator, description: UserSensorDescription, user_id: int, user_name: str
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self.user_id = user_id
+        self._attr_unique_id = f"{coordinator.address}-user{user_id}-{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{coordinator.address}-user{user_id}")},
+            name=f"{coordinator.title} ({user_name})",
+            manufacturer="Withings",
+            model="Body Smart",
+            via_device=(DOMAIN, coordinator.address),
+        )
+
+    def _current_value(self) -> float | datetime | None:
+        weigh_in = self.coordinator.data.users.get(self.user_id)
+        return None if weigh_in is None else self.entity_description.value_fn(weigh_in)
