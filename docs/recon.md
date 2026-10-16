@@ -30,4 +30,16 @@ To tell the scale apart from background devices, the scan first spent 30 s learn
 
 Why the first scans missed it: the scale doesn't advertise when idle or after a weigh-in (in Wi-Fi mode, on this firmware). It only advertised briefly once the button menu was open. The earlier scans probably caught nothing because nothing woke the advertising.
 
+### GATT inventory (read-only, no pairing)
+
+`tools/gatt_dump.py` connected during the advertising window. The connection needed no pairing prompt, and the negotiated MTU was 185.
+
+| Service | Characteristic | Properties |
+|---|---|---|
+| `00000020-5749-5448-0010-000000000000` | `00000024-5749-5448-0010-000000000000` | notify, write, write-without-response |
+
+That is the only service. CoreBluetooth hides the standard GAP/GATT services, and no Device Information or Battery service is exposed. This matches the WPP layout reported for Withings scales: a single characteristic carries every request (write) and response (notify).
+
+Next: subscribe to `0x24`, send a PROBE, and see whether encryption or pairing is enforced at that point.
+
 Tooling note: macOS kills Bluetooth processes launched by the `claude` CLI (TCC: no usage description). Run Bluetooth tools with `tools/terminal_run.sh`.
