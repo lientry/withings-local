@@ -23,6 +23,8 @@ packages = ["src/withings_wpp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.uv]
 # The library itself supports 3.13+; the dev environment follows Home Assistant's minimum.
