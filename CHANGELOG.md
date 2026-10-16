@@ -4,6 +4,8 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-16
+
 ### Changed
 - Readings are ignored when the device fails to prove it knows the key (mutual authentication). Before, they were recorded with a warning. A real scale always passes this check; a device impersonating the scale's advertisement can't.
 
