@@ -2,7 +2,8 @@
 
 Usage: uv run tools/probe.py [--app-version N] [--os-version N] [--listen SECONDS]
 
-Safe by design. The script sends only PROBE and never answers device requests such as SETUP_OK,
+Safe by design. The script sends only PROBE, optionally CONNECT_REASON (a read), and DISCONNECT.
+It never answers device requests such as SETUP_OK,
 so a setup-mode session ends with "Setup failed" on the display and nothing on the scale changes.
 If the link needs encryption, macOS shows a pairing dialog: type the code shown on the scale.
 
@@ -19,9 +20,9 @@ from pathlib import Path
 
 from bleak import BleakClient, BleakScanner
 
-from withings_wpp.codec import Reassembler
+from withings_wpp.codec import Message, Reassembler
 from withings_wpp.advertisement import is_withings
-from withings_wpp.messages import CmdError, Obj, ProbeChallenge, ProbeReply, describe, probe
+from withings_wpp.messages import Cmd, CmdError, Obj, ProbeChallenge, ProbeReply, connect_reason_request, describe, probe
 
 WITH_MARKER = "-5749-5448-"
 CHAR_SHORT = "00000024"
@@ -56,7 +57,7 @@ def summarize(msg) -> list[str]:
 
 async def main(args) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    print(">>> Waiting for the scale. Short-press its button now. <<<\n", flush=True)
+    print(">>> Waiting up to 3 min for the scale. Step on it now (or short-press its button). <<<\n", flush=True)
     found = asyncio.get_running_loop().create_future()
 
     def on_adv(device, adv):
@@ -65,7 +66,7 @@ async def main(args) -> None:
 
     async with BleakScanner(on_adv):
         try:
-            device = await asyncio.wait_for(found, 90)
+            device = await asyncio.wait_for(found, 180)
         except TimeoutError:
             print("No Withings advertisement seen.")
             return
@@ -94,15 +95,23 @@ async def main(args) -> None:
             )
             print(f"[{stamp():6.2f}s] connected, MTU {client.mtu_size}", flush=True)
             await client.start_notify(char, on_notify)
-            msg = probe(args.app_version, args.os_version)
-            raw = msg.encode()
-            log["sent"].append({"t": stamp(), "hex": raw.hex()})
-            print(f"[{stamp():6.2f}s] -> {describe(msg)}", flush=True)
-            await client.write_gatt_char(char, raw, response=True)
-            print(f"[{stamp():6.2f}s] write acknowledged", flush=True)
-            last_rx[0] = time.monotonic()
-            while time.monotonic() - last_rx[0] < args.listen and client.is_connected:
-                await asyncio.sleep(0.2)
+
+            async def send(msg, listen: float) -> None:
+                raw = msg.encode()
+                log["sent"].append({"t": stamp(), "hex": raw.hex()})
+                print(f"[{stamp():6.2f}s] -> {describe(msg)}", flush=True)
+                await client.write_gatt_char(char, raw, response=True)
+                last_rx[0] = time.monotonic()
+                while time.monotonic() - last_rx[0] < listen and client.is_connected:
+                    await asyncio.sleep(0.2)
+
+            await send(probe(args.app_version, args.os_version), args.listen)
+            if args.connect_reason and client.is_connected:
+                # Read-only query; the scale may refuse it before authentication.
+                await send(connect_reason_request(), 3)
+            if client.is_connected:
+                # The phone app ends every session this way.
+                await send(Message(Cmd.DISCONNECT), 1)
             log["events"].append({"t": stamp(), "end": "connected" if client.is_connected else "device disconnected"})
     except Exception as e:  # noqa: BLE001 - record whatever happened
         print(f"[{stamp():6.2f}s] !! {type(e).__name__}: {e}", flush=True)
@@ -120,4 +129,5 @@ if __name__ == "__main__":
     p.add_argument("--app-version", type=int, default=202609240, help="AppProbe version field")
     p.add_argument("--os-version", type=int, default=34, help="AppProbeOsVersion, e.g. Android API level")
     p.add_argument("--listen", type=float, default=8, help="seconds to keep listening after the last message")
+    p.add_argument("--connect-reason", action="store_true", help="also ask the scale why it connected")
     asyncio.run(main(p.parse_args()))

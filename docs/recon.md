@@ -44,4 +44,19 @@ That is the only service. CoreBluetooth hides the standard GAP/GATT services, an
 
 The scale accepted a PROBE without link encryption or pairing. It replied in setup mode with `PROBE_REPLY` and `FACTORY_STATE`, which reports firmware 1311 and bootloader 2. The details are in [protocol.md](protocol.md). The raw capture stays in `captures/`, because the reply contains the MAC and the manufacturing ID.
 
+### Bluetooth mode: advertisement after a weigh-in
+
+The scale was switched to Bluetooth mode with the official app (see [user-guide.md](user-guide.md)). In a timed scan the user stepped on the scale when prompted.
+
+| Field | Setup mode (button) | Bluetooth mode, after a weigh-in |
+|---|---|---|
+| Name | `Body Smart XX` | `Body Smart XX` |
+| Service UUID tail | `000000000000` | **the scale's MAC** (12 hex digits) |
+| Manufacturer data, company `0x03FF` | `00000000` | 4 non-zero bytes (meaning unknown; probably status or identity) |
+| 0xFD77 service data | none | none (this model uses the "WITH" UUID form) |
+| When | about 18 s after the press | about 60 s after stepping on, i.e. after the measurement finished |
+| Seen | about 15 s | only twice, so the window is short |
+
+Next: connect immediately after a weigh-in, expect `PROBE_CHALLENGE` instead of `PROBE_REPLY`, and read the connect reason.
+
 Tooling note: macOS kills Bluetooth processes launched by the `claude` CLI (TCC: no usage description). Run Bluetooth tools with `tools/terminal_run.sh`.
