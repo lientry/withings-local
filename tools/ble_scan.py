@@ -53,6 +53,7 @@ async def main(seconds: float) -> None:
             print(f"{rec['address']}  {rec['rssi']:>4} dBm  {rec['name']!r}{flag}")
         seen[device.address] = rec
 
+    print(f">>> Scanning for {seconds:.0f}s. Step on the scale now. <<<\n", flush=True)
     async with BleakScanner(on_adv):
         await asyncio.sleep(seconds)
 
