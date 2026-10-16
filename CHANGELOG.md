@@ -4,6 +4,12 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+### Fixed
+- A Bluetooth session that hangs, seen on a Raspberry Pi adapter after connecting, no longer blocks every later sync until a restart. Subscribing, each write and the whole session now have timeouts.
+
+### Changed
+- Debug logs show each session step (subscribing, subscribed, every message) and when the scale disconnects.
+
 ## [0.2.1] - 2026-10-16
 
 ### Fixed

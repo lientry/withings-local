@@ -10,3 +10,5 @@ LOCAL_NAME_PREFIX = "Body Smart"
 BODY_SMART_MODEL_ID = 0x0010
 # Don't reconnect for the same burst of advertisements after a sync.
 POLL_COOLDOWN_SECONDS = 30
+# A full read takes ~1-3 s; anything far longer is a stuck link.
+SESSION_TIMEOUT_SECONDS = 45

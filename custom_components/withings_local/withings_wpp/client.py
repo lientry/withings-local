@@ -36,6 +36,8 @@ _LOGGER = logging.getLogger(__name__)
 WITH_MARKER = "-5749-5448-"
 CHAR_PREFIX = "00000024"
 ERR_UNSUPPORTED = -3
+SUBSCRIBE_TIMEOUT = 15.0
+WRITE_TIMEOUT = 10.0
 
 
 class WppCommandError(Exception):
@@ -74,7 +76,16 @@ class WppSession:
         self._trace = trace or (lambda direction, raw: None)
 
     async def start(self) -> None:
-        await self._client.start_notify(self._char, self._on_notify)
+        _LOGGER.debug("subscribing to notifications on %s", self._char.uuid)
+        try:
+            async with asyncio.timeout(SUBSCRIBE_TIMEOUT):
+                await self._client.start_notify(self._char, self._on_notify)
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"subscribing to notifications took more than {SUBSCRIBE_TIMEOUT:.0f}s "
+                "(the Bluetooth stack may be trying to pair with the scale)"
+            ) from err
+        _LOGGER.debug("subscribed")
 
     def _on_notify(self, _char, data: bytearray) -> None:
         self._trace("rx", bytes(data))
@@ -98,7 +109,8 @@ class WppSession:
         raw = msg.encode()
         _LOGGER.debug("-> %s", describe(msg))
         self._trace("tx", raw)
-        await self._client.write_gatt_char(self._char, raw, response=True)
+        async with asyncio.timeout(WRITE_TIMEOUT):
+            await self._client.write_gatt_char(self._char, raw, response=True)
 
     async def request(self, msg: Message, *, multi: bool = False, timeout: float = 5.0) -> list[Message]:
         """Send and collect the reply. Multi-message replies end with a Null TLV."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from collections.abc import Callable
+import asyncio
 from datetime import datetime
 import logging
 import time
@@ -23,7 +24,7 @@ from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from .const import BODY_SMART_MODEL_ID, CONF_KL, OPT_KNOWN_USERS, POLL_COOLDOWN_SECONDS
+from .const import BODY_SMART_MODEL_ID, CONF_KL, OPT_KNOWN_USERS, POLL_COOLDOWN_SECONDS, SESSION_TIMEOUT_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -149,14 +150,23 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
         device = bluetooth.async_ble_device_from_address(self.hass, service_info.address, connectable=True)
         started = time.monotonic()
         step = "connecting"
+        def on_disconnect(_client) -> None:
+            _LOGGER.debug("%s: scale disconnected after %.1fs", self.title, time.monotonic() - started)
+
         try:
             client = await establish_connection(
-                BleakClientWithServiceCache, device or service_info.device, self.title, max_attempts=3
+                BleakClientWithServiceCache,
+                device or service_info.device,
+                self.title,
+                disconnected_callback=on_disconnect,
+                max_attempts=3,
             )
             step = "reading"
             _LOGGER.debug("%s: connected after %.1fs", self.title, time.monotonic() - started)
             try:
-                result = await read_measurements(client, self._kl)
+                # A stuck session must never block later syncs.
+                async with asyncio.timeout(SESSION_TIMEOUT_SECONDS):
+                    result = await read_measurements(client, self._kl)
             finally:
                 await client.disconnect()
         except Exception as err:
