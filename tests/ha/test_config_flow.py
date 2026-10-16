@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from withings_wpp import account
+from custom_components.withings_local.withings_wpp import account
 
 from homeassistant.config_entries import SOURCE_BLUETOOTH
 from homeassistant.core import HomeAssistant

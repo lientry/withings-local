@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from withings_wpp.measures import Measure, MeasureGroup
+from custom_components.withings_local.withings_wpp.measures import Measure, MeasureGroup
 
 from custom_components.withings_local.coordinator import has_new_data, latest_weigh_in
 

@@ -7,8 +7,8 @@ from typing import Any
 
 import aiohttp
 import voluptuous as vol
-from withings_wpp import account
-from withings_wpp.advertisement import WithingsUuid
+from .withings_wpp import account
+from .withings_wpp.advertisement import WithingsUuid
 
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, async_discovered_service_info
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult

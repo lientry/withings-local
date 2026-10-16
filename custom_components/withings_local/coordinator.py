@@ -7,9 +7,9 @@ from datetime import datetime
 import logging
 
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
-from withings_wpp.advertisement import WithingsUuid
-from withings_wpp.client import read_measurements
-from withings_wpp.measures import MeasureGroup
+from .withings_wpp.advertisement import WithingsUuid
+from .withings_wpp.client import read_measurements
+from .withings_wpp.measures import MeasureGroup
 
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothScanningMode, BluetoothServiceInfoBleak
