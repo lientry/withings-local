@@ -22,7 +22,7 @@ jobs:
             exit 1
           fi
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           # Home Assistant's Python. Newer versions lack prebuilt wheels and compile from source.
           python-version: "3.14"
