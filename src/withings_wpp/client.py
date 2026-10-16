@@ -158,3 +158,34 @@ class ScaleClient:
     async def disconnect(self) -> None:
         # The phone app sends this without waiting for an answer.
         await self.session.send(Message(Cmd.DISCONNECT))
+
+
+@dataclass
+class SyncResult:
+    authenticated: bool
+    scale_verified: bool
+    connect_reason: int | None
+    firmware: int | None
+    groups: list[MeasureGroup]
+
+
+async def read_measurements(ble: BleakClient, kl: str) -> SyncResult:
+    """Run one read-only session on a connected client: authenticate, read, disconnect."""
+    session = WppSession(ble)
+    await session.start()
+    scale = ScaleClient(session)
+    auth_result = await scale.authenticate(kl)
+    firmware = auth_result.reply.soft_version if auth_result.reply else None
+    if not auth_result.authenticated:
+        return SyncResult(False, False, None, firmware, [])
+    try:
+        reason = await scale.connect_reason()
+    except WppCommandError:
+        reason = None
+    status = await scale.measure_status()
+    groups = await scale.measures() if status.count > 0 else []
+    try:
+        await scale.disconnect()
+    except Exception:  # noqa: BLE001 - the scale may already be gone
+        _LOGGER.debug("disconnect message not delivered", exc_info=True)
+    return SyncResult(True, auth_result.scale_verified, reason, firmware, groups)
