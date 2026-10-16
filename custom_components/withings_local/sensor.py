@@ -124,10 +124,13 @@ SCALE_SENSORS: tuple[ScaleSensorDescription, ...] = (
 GUEST_SENSOR_KEYS = {"weight", "measured_at"}
 
 
-def user_display_name(entry: WithingsLocalConfigEntry, user_id: int, index: int) -> str:
+def user_display_name(entry: WithingsLocalConfigEntry, user_id: int, known_users: list[int]) -> str:
+    """Account first name when known, else "User N" numbered among real users (guest excluded)."""
     if user_id == GUEST_USER_ID:
         return "Guest"
-    return (entry.data.get(CONF_USERS) or {}).get(str(user_id)) or f"User {index + 1}"
+    if name := (entry.data.get(CONF_USERS) or {}).get(str(user_id)):
+        return name
+    return f"User {[u for u in known_users if u != GUEST_USER_ID].index(user_id) + 1}"
 
 
 async def async_setup_entry(
@@ -139,7 +142,7 @@ async def async_setup_entry(
     @callback
     def add_users(user_ids: list[int]) -> None:
         async_add_entities(
-            UserSensor(coordinator, d, user_id, user_display_name(entry, user_id, coordinator.known_users.index(user_id)))
+            UserSensor(coordinator, d, user_id, user_display_name(entry, user_id, coordinator.known_users))
             for user_id in user_ids
             for d in USER_SENSORS
             if user_id != GUEST_USER_ID or d.key in GUEST_SENSOR_KEYS

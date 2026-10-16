@@ -63,12 +63,15 @@ async def test_per_user_sensors_appear_and_keep_values(hass: HomeAssistant, mock
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_guest_gets_weight_only(hass: HomeAssistant, mock_bluetooth) -> None:
+async def test_guest_gets_weight_only_and_isnt_numbered(hass: HomeAssistant, mock_bluetooth) -> None:
     entry = await _setup(hass)
-    _sync(entry, {0: WeighIn(datetime(2026, 1, 2, tzinfo=UTC), {"weight": 55.0})})
+    when = datetime(2026, 1, 2, tzinfo=UTC)
+    _sync(entry, {ALICE: WeighIn(when, {"weight": 70.0}), 0: WeighIn(when, {"weight": 55.0}), BOB: WeighIn(when, {"weight": 90.0})})
     await hass.async_block_till_done()
     assert float(hass.states.get("sensor.body_smart_guest_weight").state) == 55.0
     assert hass.states.get("sensor.body_smart_guest_muscle_mass") is None
+    # Guest doesn't take a number: the second real user is "User 2", not "User 3".
+    assert float(hass.states.get("sensor.body_smart_user_2_weight").state) == 90.0
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

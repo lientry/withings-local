@@ -36,4 +36,4 @@ You need:
 
 Notes:
 - **The phone app can compete for the readings.** If your phone's Withings app connects to the scale first, it uploads the readings and then deletes them from the scale, so Home Assistant may miss that weigh-in. Home Assistant never deletes readings. Put the adapter or proxy close to the scale.
-- **Every reading is picked up, whoever stands on the scale.** The integration shows the latest weigh-in; per-person sensors are planned.
+- **One device per person.** Each Withings user gets their own device ("Body Smart (name)") with their latest weigh-in. Names come from your Withings account if you set up with the login; with a pasted key they show as "User 1", "User 2", and you can rename them in Home Assistant. **Guest** weigh-ins get a separate device with weight only. The scale's own device shows the battery level and the last sync.

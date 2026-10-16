@@ -15,10 +15,12 @@ Read measurements from a Withings smart scale over Bluetooth LE, locally, withou
 
 **Supported:** Withings Body Smart (WBS13) in **Bluetooth mode**. Wi-Fi mode is not supported (see the [user guide](docs/user-guide.md)). Other Withings scales using the same protocol may work but are untested.
 
-**Sensors:**
+**Sensors**, per Withings user (plus a weight-only "Guest" device):
 - weight, fat mass, fat ratio, fat-free mass, muscle mass, bone mass, water mass
 - visceral fat, basal metabolic rate, metabolic age, heart rate
 - time of the last weigh-in
+
+The scale's own device shows battery level and the last sync.
 
 ## How it works
 
