@@ -4,6 +4,8 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-16
+
 ### Fixed
 - After a failed connection, retry on the scale's next advertisement instead of waiting 30 seconds. The advertising window is short, so a weak signal used to mean a missed weigh-in.
 - Scales discovered without a name (common with passive or distant adapters) are titled "Body Smart" instead of their Bluetooth address. Existing entries are renamed.
