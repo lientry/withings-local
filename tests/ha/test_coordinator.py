@@ -54,3 +54,15 @@ async def test_retries_during_window_after_failure(hass, mock_bluetooth) -> None
     assert not coordinator._needs_poll(info, 5)  # noqa: SLF001 - recent successful sync: wait
     coordinator.last_poll_successful = False
     assert coordinator._needs_poll(info, 5)  # noqa: SLF001 - recent failure: retry now
+
+
+
+def test_setup_mode_detected_despite_merged_weigh_in_data() -> None:
+    from custom_components.withings_local.coordinator import is_setup_mode
+
+    from .conftest import INSTALLED_UUID
+
+    merged = service_info(uuid=SETUP_UUID, mfr=b"\x12\x34\x56\x78")  # stale weigh-in bytes
+    merged.service_uuids.append(INSTALLED_UUID)  # stale weigh-in UUID
+    assert is_setup_mode(merged)
+    assert not is_setup_mode(service_info())  # only a weigh-in advertisement

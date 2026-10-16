@@ -90,11 +90,14 @@ def _is_bonded(device) -> bool:
 
 
 def is_setup_mode(service_info: BluetoothServiceInfoBleak) -> bool:
-    """True for the advertisement the scale sends in setup mode (button held 3 s): it can be
-    paired then, and it won't hand out measurements."""
-    if has_new_data(service_info):
-        return False
-    return any((w := WithingsUuid.parse(u)) and w.model_id == BODY_SMART_MODEL_ID for u in service_info.service_uuids)
+    """True when the scale advertises in setup mode (button held 3 s): its service UUID then has
+    an all-zero tail. Home Assistant merges a device's advertisement data with earlier packets,
+    so weigh-in data (MAC tail, manufacturer bytes) may still be present; only look for the
+    setup-mode UUID."""
+    return any(
+        (w := WithingsUuid.parse(u)) and w.model_id == BODY_SMART_MODEL_ID and not w.tail.strip("0")
+        for u in service_info.service_uuids
+    )
 
 
 class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
@@ -103,6 +106,7 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
     def __init__(self, hass: HomeAssistant, entry: WithingsLocalConfigEntry) -> None:
         self._kl: str = entry.data[CONF_KL]
         self._entry = entry
+        self.config_entry_id = entry.entry_id
         self.title = entry.title
         # Users seen so far, in order of first appearance; persisted so their entities exist after a restart.
         self.known_users: list[int] = list(entry.options.get(OPT_KNOWN_USERS, []))

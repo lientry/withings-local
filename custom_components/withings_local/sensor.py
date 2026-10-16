@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfMass, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -225,7 +226,9 @@ class UserSensor(_WithingsSensor):
             name=f"{coordinator.title} ({user_name})",
             manufacturer="Withings",
             model="Body Smart",
-            via_device=(DOMAIN, coordinator.address),
+            via_device_id=dr.async_get_device_id_by_identifier(
+                coordinator.hass, (DOMAIN, coordinator.address), config_entry_id=coordinator.config_entry_id
+            ),
         )
 
     def _current_value(self) -> float | datetime | None:
