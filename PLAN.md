@@ -48,7 +48,7 @@ What prior work says about WPP (from research — still to be verified against *
 |---|---|
 | 0–2 Target, tooling, recon | **done**: advertisement, GATT layout and probe documented in `docs/` |
 | 3 Protocol from the app | **done**: session flow, records and advertisement in `docs/protocol.md` |
-| 4 Ground truth | **done differently**: validated against the real scale instead of HCI captures. Readings match the Withings app, and the app still syncs them because we never delete. |
+| 4 Ground truth | **done differently**: checked against the real scale instead of HCI captures. The app still received a reading we had already read (16:29), because we never delete. Value-by-value comparison is pending. |
 | 5 Library | **working**: codec, mutual auth, read-only client, `tools/read_measurements.py`. Still missing: multi-user mapping, TIME_SET, packaging. |
 | 6 HA integration | next |
 
