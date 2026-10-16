@@ -87,3 +87,13 @@ What the records showed:
 No delete was sent, so the readings should still sync to the official app.
 
 Tooling note: macOS kills Bluetooth processes launched by the `claude` CLI (TCC: no usage description). Run Bluetooth tools with `tools/terminal_run.sh`.
+
+### Coexistence with the phone app (observed)
+
+- After the switch to Bluetooth mode, the first weigh-in was advertised only briefly. The user's iPhone (Bluetooth on) connected and synced it, and that reading then **did not appear** in our later read of the scale's storage. This matches the app analysis: the app deletes stored readings (action 2) after uploading them.
+- Readings taken with the phone's Bluetooth off stayed stored on the scale, because we only read and never delete. Refreshing the phone app doesn't fetch them. A Bluetooth-mode scale only syncs when it advertises after a weigh-in, so the phone collects them at the next weigh-in.
+
+Consequence for the HA integration: whoever connects first after a weigh-in gets the readings. If the phone syncs first, it deletes them before HA sees them. Options to evaluate:
+- HA connects first (adapter or proxy close to the scale) and reads without deleting.
+- Accept that HA only sees readings when the phone isn't around.
+- Make HA the only reader, with optional delete and optional cloud upload.
