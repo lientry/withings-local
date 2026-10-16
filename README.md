@@ -37,6 +37,15 @@ uv run tools/ble_scan.py 60   # run from your own terminal, then step on the sca
 ```
 On macOS, Bluetooth scripts need Bluetooth permission for the terminal app that runs them.
 
+## Prior art and thanks
+
+This project builds on public work by others. We read these projects for understanding; no code was copied from them.
+
+- [openwithings](https://github.com/totruok/openwithings) (MIT): protocol notes and tools for the Body+ (WBS05). Our starting point for the message framing, the probe and challenge exchange, and the account-key flow.
+- [esphome-withings-wpp](https://github.com/NavistAuLabs/esphome-withings-wpp): an ESPHome component that reads a Body Smart on an ESP32. Use it if you prefer a dedicated ESPHome device.
+- [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge): its Withings Steel HR support documents the same protocol family for watches.
+- [withouthings](https://github.com/DavidVentura/withouthings) and [scanwatch_ble](https://github.com/SureshotM6/scanwatch_ble): the same protocol on Withings ScanWatch watches.
+
 ## Not
 - **No Withings code.** The repo contains no Withings code, firmware or app files, and must never contain any.
 - **Not a medical device.** Values are as reported by the scale, with no guarantee of accuracy. Firmware updates may break things.
