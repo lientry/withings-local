@@ -16,7 +16,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 
 from . import auth
 from .codec import DEVICE_REQUEST, Message, Reassembler, Tlv
-from .measures import MeasureGroup, parse_groups
+from .measures import MeasureGroup, merge_by_time, parse_groups
 from .messages import (
     Cmd,
     CmdError,
@@ -85,6 +85,10 @@ class WppSession:
                 self._inbox.put_nowait(msg)
 
     async def _answer_device_request(self, msg: Message) -> None:
+        if msg.base_command == Cmd.SYNC_OK:
+            # The scale expects its sync acknowledgement echoed back.
+            await self.send(Message(Cmd.SYNC_OK | DEVICE_REQUEST))
+            return
         # Like the phone app does for requests it doesn't handle: reply "unsupported".
         err = Tlv(Obj.CMD_ERROR, struct.pack(">Hi", msg.base_command, ERR_UNSUPPORTED))
         await self.send(Message(Cmd.ERROR | DEVICE_REQUEST, (err,)))
@@ -155,6 +159,11 @@ class ScaleClient:
         replies = await self.session.request(stored_measure(MeasureAction.GET_ALL), multi=True, timeout=10)
         return parse_groups(replies)
 
+    async def sync_ok(self) -> None:
+        """Acknowledge the sync. Reported as required: without it the scale may ignore the next
+        connection. Reported not to delete or mark readings, so the phone app still gets them."""
+        await self.session.request(Message(Cmd.SYNC_OK), timeout=3)
+
     async def disconnect(self) -> None:
         # The phone app sends this without waiting for an answer.
         await self.session.send(Message(Cmd.DISCONNECT))
@@ -183,7 +192,11 @@ async def read_measurements(ble: BleakClient, kl: str) -> SyncResult:
     except WppCommandError:
         reason = None
     status = await scale.measure_status()
-    groups = await scale.measures() if status.count > 0 else []
+    groups = merge_by_time(await scale.measures()) if status.count > 0 else []
+    try:
+        await scale.sync_ok()
+    except (WppCommandError, TimeoutError):
+        _LOGGER.debug("SYNC_OK not acknowledged", exc_info=True)
     try:
         await scale.disconnect()
     except Exception:  # noqa: BLE001 - the scale may already be gone

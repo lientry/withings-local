@@ -62,11 +62,15 @@ Each item is marked **app** (seen in the decompiled app's behaviour) or **report
 6. **Stored measurements** (cmd 271). The request carries `STORED_MEASURE_ACTION` (276): `cmd:u8, rc:s8`.
    - `cmd=0` → `STORED_MEASURE_STATUS` (277): `count:s16, oldest_time:s32, wifi_configured:s8`.
    - `cmd=1` → a multi-message list of records:
-     - `STORED_MEASURE_META` (278): `uid:u32, user_count:u8, user_ids:u32[], attrib:u8, time:u32`, where `time` is UTC epoch seconds and applies to the data that follows.
+     - `STORED_MEASURE_META` (278): `uid:u32, valid:u8, ids:(u8 length + u32 array), attrib:u8, time:u32`, where `time` is UTC epoch seconds and applies to the data that follows. **Observed:** valid=1 with a 3-slot array, so only the first `valid` IDs mean anything. User IDs and `uid` aren't reliable keys.
      - `STORED_MEASURE_DATA` (279): `value:s32, type:u16, exponent:s16`; real value = value × 10^exponent.
      - Optional extras attach to the preceding data: `STORED_MEASURE_META_EXTEND` (299, algorithm), position, algorithm parameters, firmware version.
    - `cmd=2` is sent only **after** the app has uploaded the data to the cloud. It probably deletes the stored records, so we never send it by default.
-7. **End.** The app sends DISCONNECT (272) without waiting. (**reported**, Body+: `SYNC_OK` (277) must be acknowledged, otherwise the scale ignores the next connection. The phone app doesn't send it for this scale.)
+7. **End.** We send `SYNC_OK` (277) and then DISCONNECT (272).
+   - **reported** (two independent projects): without SYNC_OK the scale may ignore the next connection, and SYNC_OK neither deletes nor marks readings.
+   - **app:** the phone app sends DISCONNECT without SYNC_OK for this scale.
+   - We also echo a SYNC_OK the scale sends as a device request.
+8. **De-duplication.** Every sync returns the scale's whole store, and one weigh-in arrives as several groups with the same timestamp (body composition, heart rate). Merge by `(time, measure type)`.
 
 Measurement type codes we expect:
 

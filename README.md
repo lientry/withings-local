@@ -13,7 +13,7 @@ Read measurements from a Withings smart scale over Bluetooth LE, locally, withou
 | `tools/` | CLI helpers: scan, probe, `fetch_kl.py` (get your scale's key), `read_measurements.py` |
 | `docs/` | Protocol notes, recon log, [user guide](docs/user-guide.md) |
 
-**Supported:** Withings Body Smart (WBS13) in **Bluetooth mode**. Other Withings scales using the same protocol may work but are untested.
+**Supported:** Withings Body Smart (WBS13) in **Bluetooth mode**. Wi-Fi mode is not supported (see the [user guide](docs/user-guide.md)). Other Withings scales using the same protocol may work but are untested.
 
 **Sensors:**
 - weight, fat mass, fat ratio, fat-free mass, muscle mass, bone mass, water mass

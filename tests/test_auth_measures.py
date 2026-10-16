@@ -27,25 +27,53 @@ def test_challenge_reply_layout_and_verify():
     assert not verify(b"\x00" * 20, own, MAC, KL)
 
 
-def _meta(uid, users, attrib, t, prefixed=False):
-    body = struct.pack(">IB", uid, len(users))
-    if prefixed:
-        body += bytes([len(users)])
-    return body + b"".join(struct.pack(">I", u) for u in users) + struct.pack(">BI", attrib, t)
+def _meta(uid, valid, ids, attrib, t):
+    return (
+        struct.pack(">IBB", uid, valid, len(ids))
+        + b"".join(struct.pack(">I", u) for u in ids)
+        + struct.pack(">BI", attrib, t)
+    )
 
 
 def _data(raw, mtype, exp):
     return struct.pack(">iHh", raw, mtype, exp)
 
 
-def test_parse_groups_both_meta_layouts():
-    for prefixed in (False, True):
-        msgs = [
-            Message(Cmd.STORED_MEASURE, (Tlv(Obj.STORED_MEASURE_META, _meta(7, [42], 0, 1_700_000_000, prefixed)),
-                                         Tlv(Obj.STORED_MEASURE_DATA, _data(72345, 1, -3)),
-                                         Tlv(Obj.STORED_MEASURE_DATA, _data(215, 6, -1)))),
-            Message(Cmd.STORED_MEASURE, (Tlv(Obj.NULL, b""),)),
-        ]
-        (g,) = parse_groups(msgs)
-        assert g.user_ids == [42] and g.time.timestamp() == 1_700_000_000
-        assert g.value("weight") == 72.345 and g.value("fat_ratio") == 21.5
+def test_parse_groups_trims_junk_user_ids():
+    # Real layout: 1 valid ID in a 3-slot array (slots 2 and 3 are junk).
+    msgs = [
+        Message(Cmd.STORED_MEASURE, (Tlv(Obj.STORED_MEASURE_META, _meta(7, 1, [42, 0xDEAD, 0xBEEF], 0, 1_700_000_000)),
+                                     Tlv(Obj.STORED_MEASURE_DATA, _data(72345, 1, -3)),
+                                     Tlv(Obj.STORED_MEASURE_DATA, _data(215, 6, -1)))),
+        Message(Cmd.STORED_MEASURE, (Tlv(Obj.NULL, b""),)),
+    ]
+    (g,) = parse_groups(msgs)
+    assert g.user_ids == [42] and g.time.timestamp() == 1_700_000_000
+    assert g.value("weight") == 72.345 and g.value("fat_ratio") == 21.5
+
+
+def test_meta_with_trailing_bytes_is_rejected():
+    import pytest
+
+    from withings_wpp.codec import WppError
+    from withings_wpp.measures import parse_meta
+
+    with pytest.raises(WppError):
+        parse_meta(_meta(7, 1, [42], 0, 1) + b"\x00")
+
+
+def test_merge_by_time_dedupes_on_time_and_type():
+    from datetime import UTC, datetime
+
+    from withings_wpp.measures import Measure, MeasureGroup, merge_by_time
+
+    t1, t2 = datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC)
+    groups = [
+        MeasureGroup(t2, [], 0, 0, [Measure(1, 70.0)]),
+        MeasureGroup(t1, [], 0, 0, [Measure(1, 71.0)]),
+        MeasureGroup(t2, [], 0, 0, [Measure(11, 60.0)]),
+        MeasureGroup(t2, [], 0, 0, [Measure(1, 70.0)]),
+    ]
+    merged = merge_by_time(groups)
+    assert [g.time for g in merged] == [t1, t2]
+    assert sorted((m.type, m.value) for m in merged[1].measures) == [(1, 70.0), (11, 60.0)]

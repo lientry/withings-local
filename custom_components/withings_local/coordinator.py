@@ -9,7 +9,7 @@ import logging
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from .withings_wpp.advertisement import WithingsUuid
 from .withings_wpp.client import read_measurements
-from .withings_wpp.measures import MeasureGroup
+from .withings_wpp.measures import MeasureGroup, merge_by_time
 
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothScanningMode, BluetoothServiceInfoBleak
@@ -34,25 +34,20 @@ class ScaleData:
 
     measured_at: datetime | None = None
     values: dict[str, float] = field(default_factory=dict)
-    user_ids: list[int] = field(default_factory=list)
     firmware: int | None = None
     last_sync: datetime | None = None
 
 
-def latest_weigh_in(groups: list[MeasureGroup]) -> tuple[datetime, dict[str, float], list[int]] | None:
-    """Merge groups sharing the newest timestamp (body composition and heart rate come separately)."""
-    if not groups:
+def latest_weigh_in(groups: list[MeasureGroup]) -> tuple[datetime, dict[str, float]] | None:
+    """The newest weigh-in, merged across groups that share its timestamp, plus a derived fat ratio."""
+    merged = merge_by_time(groups)
+    if not merged:
         return None
-    newest = max(g.time for g in groups)
-    values: dict[str, float] = {}
-    users: list[int] = []
-    for g in groups:
-        if g.time == newest:
-            values.update({m.name: m.value for m in g.measures})
-            users = users or g.user_ids
+    newest = merged[-1]
+    values = {m.name: m.value for m in newest.measures}
     if (weight := values.get("weight")) and (fat := values.get("fat_mass")) is not None:
         values.setdefault("fat_ratio", round(fat / weight * 100, 2))
-    return newest, values, users
+    return newest.time, values
 
 
 def has_new_data(service_info: BluetoothServiceInfoBleak) -> bool:
@@ -109,13 +104,12 @@ class WithingsScaleCoordinator(ActiveBluetoothDataUpdateCoordinator[ScaleData]):
         data = ScaleData(
             measured_at=self.data.measured_at,
             values=self.data.values,
-            user_ids=self.data.user_ids,
             firmware=result.firmware or self.data.firmware,
             last_sync=dt_util.utcnow(),
         )
         if (latest := latest_weigh_in(result.groups)) and (
             data.measured_at is None or latest[0] >= data.measured_at
         ):
-            data.measured_at, data.values, data.user_ids = latest
+            data.measured_at, data.values = latest
         _LOGGER.debug("%s: read %d group(s), latest %s", self.title, len(result.groups), data.measured_at)
         return data

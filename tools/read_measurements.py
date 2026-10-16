@@ -21,6 +21,7 @@ from bleak import BleakClient, BleakScanner
 
 from withings_wpp.advertisement import is_withings
 from withings_wpp.client import ScaleClient, WppCommandError, WppSession
+from withings_wpp.measures import merge_by_time
 from withings_wpp.messages import ConnectReason
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,12 +63,17 @@ async def main() -> None:
                 print(f"  connect reason refused: {e}")
             status = await scale.measure_status()
             print(f"  stored measurement groups: {status.count}", flush=True)
-            groups = await scale.measures() if status.count > 0 else []
+            groups = merge_by_time(await scale.measures()) if status.count > 0 else []
             for g in groups:
                 when = g.time.astimezone().strftime("%Y-%m-%d %H:%M:%S")
                 values = ", ".join(f"{m.name}={m.value}{m.unit and ' ' + m.unit}" for m in g.measures)
                 extra = f" (+ unparsed TLVs {sorted(set(g.unknown_tlvs))})" if g.unknown_tlvs else ""
-                print(f"  {when}  users={len(g.user_ids)}  {values}{extra}")
+                print(f"  {when}  {values}{extra}")
+            try:
+                await scale.sync_ok()
+                print("  sync acknowledged (SYNC_OK)")
+            except (WppCommandError, TimeoutError) as e:
+                print(f"  SYNC_OK not acknowledged: {e}")
             await scale.disconnect()
             await asyncio.sleep(0.5)
     finally:

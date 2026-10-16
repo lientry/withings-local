@@ -55,32 +55,41 @@ class MeasureGroup:
 
 
 def parse_meta(value: bytes) -> MeasureGroup:
-    """STORED_MEASURE_META: uid u32, user count u8, user ids, attrib u8, time u32.
+    """STORED_MEASURE_META: uid u32, valid u8, ids u8-length array of u32, attrib u8, time u32.
 
-    The user-id list may or may not carry its own u8 count prefix after the count field. Accept
-    whichever layout consumes the value exactly.
+    Only the first `valid` IDs are meaningful; the rest of the array is junk. User IDs and `uid`
+    are not reliable enough to use as keys; deduplicate on (time, measure type) instead.
     """
-    for prefixed in (False, True):
-        try:
-            r = Reader(value)
-            uid = r.u32()
-            count = r.u8()
-            if prefixed:
-                count = r.u8()
-            users = [r.u32() for _ in range(count)]
-            attrib = r.u8()
-            time = r.u32()
-            if r.remaining == 0:
-                return MeasureGroup(datetime.fromtimestamp(time, UTC), users, attrib, uid)
-        except WppError:
-            continue
-    raise WppError(f"unrecognised STORED_MEASURE_META layout ({len(value)} bytes)")
+    r = Reader(value)
+    uid = r.u32()
+    valid = r.u8()
+    ids = [r.u32() for _ in range(r.u8())]
+    attrib = r.u8()
+    time = r.u32()
+    if r.remaining:
+        raise WppError(f"STORED_MEASURE_META has {r.remaining} unexpected trailing bytes")
+    return MeasureGroup(datetime.fromtimestamp(time, UTC), ids[:valid], attrib, uid)
 
 
 def parse_data(value: bytes) -> Measure:
     r = Reader(value)
     raw, mtype, exponent = r.i32(), r.u16(), r.i16()
     return Measure(mtype, round(raw * 10.0**exponent, max(0, -exponent)))
+
+
+def merge_by_time(groups: list[MeasureGroup]) -> list[MeasureGroup]:
+    """One group per timestamp with one value per measure type, oldest first.
+
+    The scale returns its whole store on every sync, and one weigh-in arrives as several groups
+    (e.g. body composition and heart rate) sharing a timestamp.
+    """
+    merged: dict[datetime, MeasureGroup] = {}
+    for g in groups:
+        m = merged.setdefault(g.time, MeasureGroup(g.time, g.user_ids, g.attrib, g.uid))
+        by_type = {x.type: x for x in m.measures} | {x.type: x for x in g.measures}
+        m.measures = list(by_type.values())
+        m.unknown_tlvs = sorted(set(m.unknown_tlvs) | set(g.unknown_tlvs))
+    return [merged[t] for t in sorted(merged)]
 
 
 def parse_groups(messages: list[Message]) -> list[MeasureGroup]:
