@@ -4,6 +4,15 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-17
+
+### Added
+- Discovery logs other Withings devices it doesn't support (name and model ID, not the address) at debug level, and the README explains how to share that to help add a device.
+
+### Changed
+- New integration icon: a white scale with a Bluetooth display.
+- The README and description now say the integration supports the Withings Body Smart.
+
 ## [0.3.1] - 2026-10-16
 
 ### Changed
