@@ -46,7 +46,7 @@ The scale accepted a PROBE without link encryption or pairing. It replied in set
 
 ### Bluetooth mode: advertisement after a weigh-in
 
-The scale was switched to Bluetooth mode with the official app (see [user-guide.md](user-guide.md)). In a timed scan the user stepped on the scale when prompted.
+The scale was switched to Bluetooth mode with the official app (see [the README](../README.md#step-1-switch-the-scale-to-bluetooth-mode)). In a timed scan the user stepped on the scale when prompted.
 
 | Field | Setup mode (button) | Bluetooth mode, after a weigh-in |
 |---|---|---|
