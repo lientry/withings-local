@@ -1,6 +1,6 @@
 # Withings Local (Bluetooth)
 
-Get the readings from your Withings smart scale into Home Assistant **over Bluetooth, locally**, without going through the Withings cloud.
+Get the readings from your Withings Body Smart scale into Home Assistant **over Bluetooth, locally**, without going through the Withings cloud. Other Withings devices aren't supported yet; see [Help add your device](#help-add-your-device).
 
 Step on the scale, and a minute later your weight, body fat, muscle mass and more show up as sensors in Home Assistant, ready for dashboards, history graphs and automations.
 
@@ -102,6 +102,28 @@ HACS tells you when a new version is out: you'll see an update under **Settings 
 4. Nothing is deleted from the scale, so the Withings app still syncs the same readings when your phone is nearby.
 
 The key (`kl`) comes from your own Withings account, once, during setup.
+
+## Help add your device
+
+Other Withings scales and watches use the same Bluetooth protocol family, so adding one is mostly a matter of learning how it identifies itself and what it sends. If you own one, [open an issue](https://github.com/pierosavi/withings-local/issues) with the model name (as shown in the Withings app) and whichever of these you can get.
+
+**From Home Assistant (no extra tools).** Add this to `configuration.yaml` and restart:
+
+```yaml
+logger:
+  logs:
+    custom_components.withings_local: debug
+```
+
+Wake the device (step on it, or press its button), then search the logs (**Settings → System → Logs**, then **Show raw logs**) for `Unsupported Withings device` and paste that line. It contains the advertised name and model ID, not the device's address. Remove the logger lines afterwards.
+
+**From a computer with Bluetooth (more detail).** With the repository cloned and [uv](https://docs.astral.sh/uv/) installed, wake the device right after starting each command:
+
+1. `uv run tools/ble_scan.py 60 --press-at 10`: what the device advertises.
+2. `uv run tools/gatt_dump.py`: its Bluetooth services. Read-only, no pairing.
+3. `uv run tools/probe.py`: its reply to a hello message. Read-only; a scale in setup mode may show "Setup failed", which is harmless.
+
+Paste the console output, after replacing the device's Bluetooth address (`AA:BB:CC:DD:EE:FF`) and any serial number with `xx`. `probe.py` already hides them, but the scan and the GATT dump print them. Don't attach the files these tools save under `captures/`: they contain identifiers, and they can contain measurements.
 
 ## For developers
 

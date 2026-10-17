@@ -97,6 +97,12 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak) -> ConfigFlowResult:
         if not is_body_smart(discovery_info):
+            # Enough to tell which device this is, without its address; users paste it into issues.
+            _LOGGER.debug(
+                "Unsupported Withings device: name=%r model_ids=%s",
+                discovery_info.name,
+                sorted({w.model_id for u in discovery_info.service_uuids if (w := WithingsUuid.parse(u))}),
+            )
             return self.async_abort(reason="not_supported")
         await self.async_set_unique_id(format_mac(discovery_info.address))
         self._abort_if_unique_id_configured()
