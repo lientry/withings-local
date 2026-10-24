@@ -77,3 +77,24 @@ def test_merge_by_time_dedupes_on_time_and_type():
     merged = merge_by_time(groups)
     assert [g.time for g in merged] == [t1, t2]
     assert sorted((m.type, m.value) for m in merged[1].measures) == [(1, 70.0), (11, 60.0)]
+
+
+def test_bad_meta_drops_its_values_instead_of_moving_them():
+    msgs = [
+        Message(Cmd.STORED_MEASURE, (Tlv(Obj.STORED_MEASURE_META, _meta(7, 1, [42, 0, 0], 0, 1_700_000_000)),
+                                     Tlv(Obj.STORED_MEASURE_DATA, _data(72345, 1, -3)),
+                                     Tlv(Obj.STORED_MEASURE_META, _meta(8, 1, [43], 0, 1_700_000_100) + b"\x00"),
+                                     Tlv(Obj.STORED_MEASURE_DATA, _data(80000, 1, -3)),
+                                     Tlv(Obj.STORED_MEASURE_META, _meta(9, 1, [44], 0, 1_700_000_200)),
+                                     Tlv(Obj.STORED_MEASURE_DATA, b"\x00"),
+                                     Tlv(Obj.STORED_MEASURE_DATA, _data(60000, 1, -3)),
+                                     Tlv(Obj.NULL, b""))),
+    ]
+    first, last = parse_groups(msgs)
+    assert first.user_ids == [42] and first.value("weight") == 72.345
+    assert last.user_ids == [44] and last.value("weight") == 60.0
+
+
+def test_data_before_any_meta_is_dropped():
+    msgs = [Message(Cmd.STORED_MEASURE, (Tlv(Obj.STORED_MEASURE_DATA, _data(72345, 1, -3)), Tlv(Obj.NULL, b"")))]
+    assert parse_groups(msgs) == []

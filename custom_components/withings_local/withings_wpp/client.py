@@ -15,7 +15,7 @@ from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 
 from . import auth
-from .codec import DEVICE_REQUEST, Message, Reassembler, Tlv
+from .codec import DEVICE_REQUEST, Message, Reassembler, Tlv, WppError
 from .measures import MeasureGroup, merge_by_time, parse_groups
 from .messages import (
     Cmd,
@@ -70,15 +70,20 @@ class Authenticated:
 
 
 class WppSession:
-    """Request/response over the single WPP characteristic."""
+    """Request/response over the single WPP characteristic.
 
-    def __init__(self, client: BleakClient, trace=None) -> None:
+    `sync_ok` controls both SYNC_OK paths: sending one at the end of a read, and echoing one the
+    device sends as a request. Devices whose reaction to it is unknown should turn it off.
+    """
+
+    def __init__(self, client: BleakClient, trace=None, *, sync_ok: bool = True) -> None:
         self._client = client
         self._char = find_wpp_characteristic(client)
         self._reasm = Reassembler()
         self._inbox: asyncio.Queue[Message] = asyncio.Queue()
         self._trace = trace or (lambda direction, raw: None)
         self._disconnected = asyncio.Event()
+        self.sync_ok = sync_ok
 
     def mark_disconnected(self) -> None:
         """Call from the client's disconnect callback: pending operations then fail at once."""
@@ -121,7 +126,7 @@ class WppSession:
                 self._inbox.put_nowait(msg)
 
     async def _answer_device_request(self, msg: Message) -> None:
-        if msg.base_command == Cmd.SYNC_OK:
+        if msg.base_command == Cmd.SYNC_OK and self.sync_ok:
             # The scale expects its sync acknowledgement echoed back.
             await self.send(Message(Cmd.SYNC_OK | DEVICE_REQUEST))
             return
@@ -136,8 +141,18 @@ class WppSession:
         async with asyncio.timeout(WRITE_TIMEOUT):
             await self._until_disconnect(self._client.write_gatt_char(self._char, raw, response=True), "writing")
 
-    async def request(self, msg: Message, *, multi: bool = False, timeout: float = 5.0) -> list[Message]:
-        """Send and collect the reply. Multi-message replies end with a Null TLV."""
+    async def request(
+        self, msg: Message, *, expect: set[int] | None = None, multi: bool = False, timeout: float = 5.0
+    ) -> list[Message]:
+        """Send and collect the reply. Multi-message replies end with a Null TLV.
+
+        Only messages whose command is in `expect` (default: the command sent) count as the reply.
+        Anything else is something the device sent on its own, such as the messages some devices
+        push right after the subscription; it is logged and dropped, as are messages left over from
+        before this request. Errors always count: they are raised whichever command they name.
+        """
+        expect = expect or {msg.base_command}
+        self._drop_stale()
         await self.send(msg)
         replies: list[Message] = []
         loop = asyncio.get_running_loop()
@@ -155,9 +170,16 @@ class WppSession:
                 if tlv is not None:
                     raise WppCommandError(CmdError.parse(tlv.value))
                 raise WppCommandError(CmdError(msg.command, 0))
+            if reply.base_command not in expect:
+                _LOGGER.debug("ignoring unsolicited %s while waiting for %s", describe(reply), msg.command)
+                continue
             replies.append(reply)
             if not multi or reply.find(Obj.NULL):
                 return replies
+
+    def _drop_stale(self) -> None:
+        while not self._inbox.empty():
+            _LOGGER.debug("dropping unanswered %s", describe(self._inbox.get_nowait()))
 
 
 class ScaleClient:
@@ -167,21 +189,23 @@ class ScaleClient:
         self.session = session
 
     async def authenticate(self, kl: str) -> Authenticated:
-        (reply,) = await self.session.request(probe())
+        # The device answers a PROBE with PROBE_CHALLENGE, or with PROBE when it skips authentication.
+        answers = {Cmd.PROBE, Cmd.PROBE_CHALLENGE}
+        (reply,) = await self.session.request(probe(), expect=answers)
         if reply.base_command == Cmd.PROBE:
             # Setup/button session: the scale didn't ask for authentication.
-            tlvs = reply.find(Obj.PROBE_REPLY)
-            return Authenticated(ProbeReply.parse(tlvs[0].value) if tlvs else None, False, False)
+            return Authenticated(_probe_reply(reply), False, False)
         tlvs = reply.find(Obj.PROBE_CHALLENGE)
-        if reply.base_command != Cmd.PROBE_CHALLENGE or not tlvs:
+        if not tlvs:
             raise AuthenticationError(f"unexpected probe answer: {describe(reply)}")
         challenge = ProbeChallenge.parse(tlvs[0].value)
         own = auth.new_challenge()
-        (final,) = await self.session.request(auth.challenge_reply(challenge.challenge, challenge.mac, kl, own))
-        probe_reply = final.find(Obj.PROBE_REPLY)
+        (final,) = await self.session.request(
+            auth.challenge_reply(challenge.challenge, challenge.mac, kl, own), expect=answers
+        )
         their_answer = final.find(Obj.PROBE_CHALLENGE_RESPONSE)
         verified = bool(their_answer) and auth.verify(their_answer[0].value[1:], own, challenge.mac, kl)
-        return Authenticated(ProbeReply.parse(probe_reply[0].value) if probe_reply else None, True, verified)
+        return Authenticated(_probe_reply(final), True, verified)
 
     async def connect_reason(self) -> int:
         (reply,) = await self.session.request(connect_reason_request())
@@ -213,6 +237,19 @@ class ScaleClient:
         await self.session.send(Message(Cmd.DISCONNECT))
 
 
+def _probe_reply(msg: Message) -> ProbeReply | None:
+    """The device description in a PROBE answer. It only tells the firmware version, so a layout we
+    can't parse must not fail the session."""
+    tlvs = msg.find(Obj.PROBE_REPLY)
+    if not tlvs:
+        return None
+    try:
+        return ProbeReply.parse(tlvs[0].value)
+    except WppError:
+        _LOGGER.debug("unparsable PROBE_REPLY (%d bytes)", len(tlvs[0].value), exc_info=True)
+        return None
+
+
 @dataclass
 class SyncResult:
     authenticated: bool
@@ -235,6 +272,11 @@ async def read_measurements(ble: BleakClient, kl: str, session: WppSession | Non
     firmware = auth_result.reply.soft_version if auth_result.reply else None
     if not auth_result.authenticated:
         return SyncResult(False, False, None, firmware, [])
+    if not auth_result.scale_verified:
+        # A device that can't prove it knows kl gets no further commands: nothing is read from it
+        # and no SYNC_OK is sent to it.
+        await _say_goodbye(scale)
+        return SyncResult(True, False, None, firmware, [])
     try:
         battery = await scale.battery()
     except (WppCommandError, TimeoutError, ValueError):
@@ -242,16 +284,22 @@ async def read_measurements(ble: BleakClient, kl: str, session: WppSession | Non
         battery = None
     try:
         reason = await scale.connect_reason()
-    except WppCommandError:
+    except (WppCommandError, TimeoutError, ValueError):
+        _LOGGER.debug("connect reason not available", exc_info=True)
         reason = None
     status = await scale.measure_status()
     groups = merge_by_time(await scale.measures()) if status.count > 0 else []
-    try:
-        await scale.sync_ok()
-    except (WppCommandError, TimeoutError):
-        _LOGGER.debug("SYNC_OK not acknowledged", exc_info=True)
+    if session.sync_ok:
+        try:
+            await scale.sync_ok()
+        except (WppCommandError, TimeoutError):
+            _LOGGER.debug("SYNC_OK not acknowledged", exc_info=True)
+    await _say_goodbye(scale)
+    return SyncResult(True, True, reason, firmware, groups, battery)
+
+
+async def _say_goodbye(scale: ScaleClient) -> None:
     try:
         await scale.disconnect()
     except Exception:  # noqa: BLE001 - the scale may already be gone
         _LOGGER.debug("disconnect message not delivered", exc_info=True)
-    return SyncResult(True, auth_result.scale_verified, reason, firmware, groups, battery)

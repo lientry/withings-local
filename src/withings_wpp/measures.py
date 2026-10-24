@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from .codec import Message, Reader, WppError
 from .messages import Obj
+
+_LOGGER = logging.getLogger(__name__)
 
 # Measure type codes (shared with the public Withings API).
 MEASURE_TYPES = {
@@ -98,15 +101,27 @@ def merge_by_time(groups: list[MeasureGroup]) -> list[MeasureGroup]:
 
 
 def parse_groups(messages: list[Message]) -> list[MeasureGroup]:
+    """Records in order: each META starts a group and the values after it belong to it.
+
+    A record that doesn't parse is skipped and logged. Values after a bad or missing META are
+    dropped with it rather than attached to the previous group, which may be someone else's.
+    """
     groups: list[MeasureGroup] = []
+    current: MeasureGroup | None = None
     for msg in messages:
         for tlv in msg.tlvs:
-            if tlv.type == Obj.STORED_MEASURE_META:
-                groups.append(parse_meta(tlv.value))
-            elif tlv.type == Obj.STORED_MEASURE_DATA:
-                if not groups:
-                    raise WppError("measure data before any meta record")
-                groups[-1].measures.append(parse_data(tlv.value))
-            elif tlv.type != Obj.NULL and groups:
-                groups[-1].unknown_tlvs.append(tlv.type)
+            try:
+                if tlv.type == Obj.STORED_MEASURE_META:
+                    current = None
+                    current = parse_meta(tlv.value)
+                    groups.append(current)
+                elif tlv.type == Obj.STORED_MEASURE_DATA:
+                    if current is None:
+                        _LOGGER.debug("dropping a measure value with no valid meta record before it")
+                    else:
+                        current.measures.append(parse_data(tlv.value))
+                elif tlv.type != Obj.NULL and current is not None:
+                    current.unknown_tlvs.append(tlv.type)
+            except WppError as err:
+                _LOGGER.warning("skipping a stored measure record (TLV %d, %d bytes): %s", tlv.type, len(tlv.value), err)
     return groups

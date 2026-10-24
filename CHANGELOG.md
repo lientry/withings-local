@@ -4,6 +4,13 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+### Changed
+- A device that fails to prove it knows the key gets no further commands: nothing is read from it and no sync acknowledgement is sent to it. Before, its readings were read and then ignored.
+
+### Fixed
+- Messages a device sends on its own, or that are left over from an earlier request, are no longer mistaken for the answer to a request. Some Withings devices send several right after connecting.
+- A stored measurement record that can't be decoded is skipped instead of failing the whole sync, and values that follow it are no longer attached to the previous weigh-in.
+
 ## [0.3.2] - 2026-10-17
 
 ### Added

@@ -55,7 +55,11 @@ async def main() -> None:
             if not result.authenticated:
                 print("Scale didn't ask for authentication (button/setup session). Weigh in instead.")
                 return
-            print(f"✓ Authenticated (scale proved it knows kl too: {result.scale_verified})", flush=True)
+            if not result.scale_verified:
+                print("✗ The device didn't prove it knows kl; not reading from it.")
+                await scale.disconnect()
+                return
+            print("✓ Authenticated (and the scale proved it knows kl too)", flush=True)
             try:
                 reason = await scale.connect_reason()
                 print(f"  connect reason: {reason} ({REASONS.get(reason, '?')})", flush=True)
