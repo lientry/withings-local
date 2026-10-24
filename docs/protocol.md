@@ -119,10 +119,29 @@ The app connects when the scale advertises *installed + sync requested*. That's 
 - **The scale never reveals it.**
 - `PROBE_REPLY.secret` is a different value, used by the app to open a server session on the scale's behalf.
 
+## BeamO signal queue — reported
+From a community report on a BeamO A8 ([#2](https://github.com/pierosavi/withings-local/issues/2)). Not tested with a BeamO, and nothing here is implemented. It's recorded so nobody reimplements the risky parts by accident.
+
+- **Transport.** The BeamO uses the newer service `00000000-0000-5749-5448-494e47530000` (the tail is ASCII `WITHINGS`) and exchanges WPP on characteristic `…0004`. A ScanWatch 2 exposes the same service, so this looks like Withings' newer layout rather than something BeamO-specific.
+- **Two stores.** `STORED_MEASURE` (271) lists the measurements, as on the scale. A separate queue holds the raw signals recorded with them: ECG, stethoscope audio, motion, and others.
+- **Fetch** (cmd 327, empty request). The reply carries one signal:
+  - `STORED_MEASURE_META` (278), the same 23-byte layout as above. The first u32 is the signal ID and `time` is the measurement time. Both are UTC epoch seconds.
+  - Descriptor (323), 8 bytes. All reported values fit `type:u16, rate_hz:u16, ?:u8, bytes_per_sample:u8, bits:u8, channels:u8`. This is our interpretation and unconfirmed.
+  - Header (326), 12 bytes. Bytes 4–7 are the total payload length (u32); the rest is unknown.
+  - Chunks (324), each an ordinary length-prefixed byte array. The payload is their concatenation.
+  - `NULL` (256) ends the reply. A `NULL` with nothing before it means the queue is empty.
+- **Payload.** Raw samples, little-endian, with no container format. Stethoscope audio is G.711 A-law at 4 kHz. Motion is 3 × int16 at 50 Hz.
+- **Acknowledge** (cmd 328) with the signal ID (325) and the descriptor (323) removes the signal from the queue:
+  - Without it, the next fetch returns the same signal, byte for byte. So a client that never acknowledges can only ever read the first signal.
+  - The measurement stays listed in `STORED_MEASURE` afterwards.
+  - Whether the acknowledged signal still reaches the Withings cloud is unknown.
+- **Values.** `STORED_MEASURE_DATA` (279) in the measurement list is where plain values such as temperature appear (see [#1](https://github.com/pierosavi/withings-local/issues/1)). Raw signals aren't Home Assistant values.
+
 ## Never send
 - ASSOCIATION_KEYS_SET (308)
 - SETUP_OK (275)
-- SCALE_SESSION (269)
+- SCALE_SESSION (269), which on the BeamO writes the user list
+- BeamO signal acknowledgement (328): it removes recordings, ECGs included, from the device queue, possibly before they reach the Withings cloud
 - user/unit writes (274)
 - Wi-Fi commands
 - firmware-update commands
