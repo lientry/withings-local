@@ -4,6 +4,8 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-24
+
 ### Changed
 - A device that fails to prove it knows the key gets no further commands: nothing is read from it and no sync acknowledgement is sent to it. Before, its readings were read and then ignored.
 
