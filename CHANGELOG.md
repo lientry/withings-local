@@ -4,6 +4,17 @@ Notable changes to the Withings Local integration. Versions follow [semantic ver
 
 ## [Unreleased]
 
+## [0.4.0b1] - 2026-10-25
+
+This is a beta: HACS offers it only if you turn on the integration's **Pre-release** switch.
+
+### Added
+- **Withings BeamO (beta).** Discovery, setup and a body temperature sensor per person, read-only: nothing is ever deleted or acknowledged on the BeamO. Built from a community report ([#1](https://github.com/pierosavi/withings-local/issues/1)) and not yet tested with Home Assistant. See the README for what's known and what isn't.
+- Diagnostics show the device model and the flags in its FD77 advertisement data.
+
+### Changed
+- Setup and messages say "device" where they no longer mean only the scale. Existing scale setups are unchanged.
+
 ## [0.3.3] - 2026-10-24
 
 ### Changed

@@ -98,3 +98,30 @@ def test_bad_meta_drops_its_values_instead_of_moving_them():
 def test_data_before_any_meta_is_dropped():
     msgs = [Message(Cmd.STORED_MEASURE, (Tlv(Obj.STORED_MEASURE_DATA, _data(72345, 1, -3)), Tlv(Obj.NULL, b"")))]
     assert parse_groups(msgs) == []
+
+
+def test_beamo_probe_is_the_reported_packet():
+    from withings_wpp.messages import beamo_probe
+
+    assert beamo_probe().encode() == bytes.fromhex("0101 01000f 012a0006 02010c139258 09760001 01")
+
+
+def test_beamo_record_with_two_metas_gives_one_reading():
+    """The payload reported for a BeamO temperature (issue #1), with synthetic meta records."""
+    from withings_wpp.measures import merge_by_time
+
+    when = 1_700_000_000
+    msgs = [
+        Message(Cmd.STORED_MEASURE, (Tlv(Obj.STORED_MEASURE_META, _meta(7, 1, [42, 0, 0], 3, when)),
+                                     Tlv(Obj.STORED_MEASURE_META, _meta(7, 1, [42, 0, 0], 0, when)),
+                                     Tlv(Obj.STORED_MEASURE_DATA, bytes.fromhex("00008f5c0047fffd")),
+                                     Tlv(0x09B9, bytes.fromhex("000100000001")),
+                                     Tlv(Obj.STORED_MEASURE_DATA, bytes.fromhex("0000894c0049fffd")),
+                                     Tlv(Obj.STORED_MEASURE_DATA, bytes.fromhex("00006ae0000cfffd")),
+                                     Tlv(0x014A, bytes.fromhex("000002b3")),
+                                     Tlv(Obj.NULL, b""))),
+    ]
+    (reading,) = merge_by_time(parse_groups(msgs))
+    assert reading.user_id == 42
+    assert reading.value("body_temperature") == 36.7
+    assert reading.value("skin_temperature") == 35.148 and reading.value("temperature") == 27.36

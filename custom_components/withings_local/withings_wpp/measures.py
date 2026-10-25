@@ -18,6 +18,9 @@ MEASURE_TYPES = {
     6: ("fat_ratio", "%"),
     8: ("fat_mass", "kg"),
     11: ("heart_rate", "bpm"),
+    12: ("temperature", "°C"),  # BeamO: reported as the device's or the room's
+    71: ("body_temperature", "°C"),
+    73: ("skin_temperature", "°C"),
     76: ("muscle_mass", "kg"),
     77: ("hydration", "kg"),
     88: ("bone_mass", "kg"),
@@ -89,10 +92,13 @@ def merge_by_time(groups: list[MeasureGroup]) -> list[MeasureGroup]:
     """One group per (timestamp, user) with one value per measure type, oldest first.
 
     The scale returns its whole store on every sync, and one weigh-in arrives as several groups
-    (e.g. body composition and heart rate) sharing a timestamp.
+    (e.g. body composition and heart rate) sharing a timestamp. Groups without values are left
+    out: a BeamO is reported to send two meta records in a row before the values.
     """
     merged: dict[tuple[datetime, int], MeasureGroup] = {}
     for g in groups:
+        if not g.measures:
+            continue
         m = merged.setdefault((g.time, g.user_id), MeasureGroup(g.time, g.user_ids, g.attrib, g.uid))
         by_type = {x.type: x for x in m.measures} | {x.type: x for x in g.measures}
         m.measures = list(by_type.values())

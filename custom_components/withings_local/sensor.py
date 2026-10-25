@@ -1,4 +1,4 @@
-"""Sensors: each user's latest weigh-in, plus scale-level diagnostics."""
+"""Sensors: each user's latest measurement, plus device-level diagnostics."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfMass, UnitOfTime
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfMass, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
@@ -20,6 +20,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import CONF_USERS, DOMAIN, GUEST_USER_ID
 from .coordinator import ScaleData, WeighIn, WithingsLocalConfigEntry, WithingsScaleCoordinator
+from .withings_wpp.devices import BODY_SMART
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -102,6 +103,26 @@ USER_SENSORS: tuple[UserSensorDescription, ...] = (
     ),
 )
 
+# BeamO: body temperature only for now. Its other values (skin and device/room temperature, and
+# whatever ECG and SpO2 sessions store) aren't confirmed enough to show.
+BEAMO_USER_SENSORS: tuple[UserSensorDescription, ...] = (
+    UserSensorDescription(
+        key="body_temperature",
+        translation_key="body_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=_measure("body_temperature"),
+    ),
+    UserSensorDescription(
+        key="measured_at",
+        translation_key="last_measurement",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda weigh_in: weigh_in.measured_at,
+    ),
+)
+
 SCALE_SENSORS: tuple[ScaleSensorDescription, ...] = (
     ScaleSensorDescription(
         key="battery",
@@ -122,7 +143,7 @@ SCALE_SENSORS: tuple[ScaleSensorDescription, ...] = (
 
 
 # A guest weigh-in carries no user ID and only a weight.
-GUEST_SENSOR_KEYS = {"weight", "measured_at"}
+GUEST_SENSOR_KEYS = {"weight", "measured_at", "body_temperature"}
 
 
 def user_display_name(entry: WithingsLocalConfigEntry, user_id: int, known_users: list[int]) -> str:
@@ -138,6 +159,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: WithingsLocalConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
+    user_sensors = USER_SENSORS if coordinator.profile is BODY_SMART else BEAMO_USER_SENSORS
     async_add_entities(ScaleSensor(coordinator, d) for d in SCALE_SENSORS)
 
     @callback
@@ -145,7 +167,7 @@ async def async_setup_entry(
         async_add_entities(
             UserSensor(coordinator, d, user_id, user_display_name(entry, user_id, coordinator.known_users))
             for user_id in user_ids
-            for d in USER_SENSORS
+            for d in user_sensors
             if user_id != GUEST_USER_ID or d.key in GUEST_SENSOR_KEYS
         )
 
@@ -154,8 +176,8 @@ async def async_setup_entry(
 
 
 class _WithingsSensor(RestoreSensor):
-    """Keeps its last value: the scale only advertises right after a weigh-in, so availability
-    means "we have a reading", not "the scale is in Bluetooth range"."""
+    """Keeps its last value: the device only advertises right after a measurement, so availability
+    means "we have a reading", not "the device is in Bluetooth range"."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -193,8 +215,8 @@ def _scale_device(coordinator: WithingsScaleCoordinator) -> DeviceInfo:
         connections={(CONNECTION_BLUETOOTH, coordinator.address)},
         name=coordinator.title,
         manufacturer="Withings",
-        model="Body Smart",
-        model_id="WBS13",
+        model=coordinator.profile.name,
+        model_id=coordinator.profile.model_code,
     )
 
 
@@ -225,7 +247,7 @@ class UserSensor(_WithingsSensor):
             identifiers={(DOMAIN, f"{coordinator.address}-user{user_id}")},
             name=f"{coordinator.title} ({user_name})",
             manufacturer="Withings",
-            model="Body Smart",
+            model=coordinator.profile.name,
             via_device_id=dr.async_get_device_id_by_identifier(
                 coordinator.hass, (DOMAIN, coordinator.address), config_entry_id=coordinator.config_entry_id
             ),

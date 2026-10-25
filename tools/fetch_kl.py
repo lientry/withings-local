@@ -1,13 +1,14 @@
 """Fetch your scale's `kl` secret from your own Withings account (one-time setup).
 
-Usage: uv run tools/fetch_kl.py
+Usage: uv run tools/fetch_kl.py            # Body Smart
+       uv run tools/fetch_kl.py --beamo    # BeamO
 
 The scale asks for proof that the client knows `kl`, a per-scale secret that Withings creates
 when the scale is added to an account. The official app downloads it from the account API, and
 this script does the same:
 1. Log in with your Withings email and password. They are typed here, never stored, and sent
    only to Withings over HTTPS.
-2. List the devices on your account, pick the Body Smart and save its `kl` to
+2. List the devices on your account, pick the Body Smart (or BeamO) and save its `kl` to
    `secrets/scale.json` (git-ignored, readable only by you).
 3. Log out.
 
@@ -25,6 +26,7 @@ import urllib.request
 from pathlib import Path
 
 from withings_wpp import account
+from withings_wpp.devices import BEAMO, BODY_SMART
 
 OUT = Path(__file__).resolve().parent.parent / "secrets" / "scale.json"
 
@@ -45,6 +47,7 @@ def post(url: str, params: dict) -> dict:
 
 
 def main() -> None:
+    profile = BEAMO if "--beamo" in sys.argv[1:] else BODY_SMART
     print("Withings login (sent only to Withings over HTTPS; nothing is stored).")
     email = input("Email: ").strip()
     password = getpass.getpass("Password (hidden): ")
@@ -57,12 +60,12 @@ def main() -> None:
         del password
     print("✓ Logged in")
     try:
-        scales = account.parse_scales(post(account.ASSOCIATION_URL, account.association_params(session)))
+        scales = account.parse_scales(post(account.ASSOCIATION_URL, account.association_params(session)), profile.model_id)
         if not scales:
-            print("✗ No Body Smart (model 16) with a kl secret found on this account.")
+            print(f"✗ No {profile.name} (model {profile.model_id}) with a kl secret found on this account.")
             sys.exit(1)
         if len(scales) > 1:
-            print("! Several Body Smart scales found; saving the first one.")
+            print(f"! Several {profile.name} devices found; saving the first one.")
         s = scales[0]
         OUT.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(OUT, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

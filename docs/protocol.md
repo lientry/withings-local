@@ -104,7 +104,7 @@ The app's background scanner matches either of two advertisements:
   - Type 2 is the MAC.
   - Type 3 is a short salted identity hash.
 
-The app connects when the scale advertises *installed + sync requested*. That's the weigh-in trigger we need in Bluetooth mode. The nibble order in the TLV headers still has to be confirmed on a real Bluetooth-mode advertisement.
+The app connects when the scale advertises *installed + sync requested*. That's the weigh-in trigger we need in Bluetooth mode. The TLV header has the type in the high nibble: a BeamO's reported advertisements, `10 47 11 00 26 <MAC>` in setup mode and `10 47 11 01 34 …` once installed, parse that way as model 71.
 
 ## Wi-Fi vs Bluetooth mode — from app analysis
 - **Wi-Fi mode has no "also sync over Bluetooth" setting.**
@@ -136,6 +136,17 @@ From a community report on a BeamO A8 ([#2](https://github.com/pierosavi/withing
   - The measurement stays listed in `STORED_MEASURE` afterwards.
   - Whether the acknowledged signal still reaches the Withings cloud is unknown.
 - **Values.** `STORED_MEASURE_DATA` (279) in the measurement list is where plain values such as temperature appear (see [#1](https://github.com/pierosavi/withings-local/issues/1)). Raw signals aren't Home Assistant values.
+
+## BeamO measurements — reported, in beta
+From a community report on a BeamO C8 ([#1](https://github.com/pierosavi/withings-local/issues/1)), tested on macOS. The integration's BeamO support (a beta) follows it; nothing here has been tested with Home Assistant yet.
+
+- **Transport.** The newer service above; WPP on `…0004`, write with response. `…0005` doesn't answer.
+- **Startup.** Right after the subscription the BeamO pushes PROBE, CONNECT_REASON and BATTERY messages, sometimes an early PROBE_CHALLENGE too. We wait 1 s, drop them, then start.
+- **Probe.** The one reported to work, byte for byte: `01 0101 000f | 012a 0006 02 01 0c139258 | 0976 0001 01`. That's an iOS AppProbe and TLV `0x0976` = 1, asking for a challenge. Without `0x0976` is untested. Authentication is the same as the scale's.
+- **Measurements.** GET_STATE and GET_ALL as on the scale. A temperature reading arrived as two META records in a row, differing in one byte, then the values: type 71 body temperature, 73 skin temperature, 12 the device's or room temperature, all in °C with exponent −3. Two TLVs, `0x09b9` and `0x014a`, are unknown.
+- **Retention.** Records stay until deleted. The Withings app reads them, then sends `STORED_MEASURE` action 2. Reading alone deletes nothing.
+- **Pairing.** It asks for a 6-digit code when an unpaired client connects ("Encryption is insufficient" otherwise). Its QR-code setup mode is how the app adds it to an account; the integration doesn't use it.
+- **Never sent to a BeamO:** SYNC_OK (its effect is unknown), `STORED_MEASURE` action 2, and the commands below.
 
 ## Never send
 - ASSOCIATION_KEYS_SET (308)

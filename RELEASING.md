@@ -13,3 +13,7 @@ HACS offers updates from GitHub releases. A release is created automatically whe
    git push origin main vX.Y.Z
    ```
 6. The release workflow checks that the tag matches the manifest, runs the tests, and publishes a GitHub release with the changelog section as its notes.
+
+## Betas
+
+A version with a pre-release suffix, such as `0.4.0b1`, is published as a GitHub pre-release. HACS offers it only to users who turn on the integration's **Pre-release** switch; everyone else stays on the latest stable release. The steps are the same; a beta can be tagged from a branch (`git push origin <branch> v0.4.0b1`). The final release then gets its own `## [X.Y.Z]` section.

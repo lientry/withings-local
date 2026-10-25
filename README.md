@@ -103,6 +103,21 @@ HACS tells you when a new version is out: you'll see an update under **Settings 
 
 The key (`kl`) comes from your own Withings account, once, during setup.
 
+## BeamO (beta)
+
+A beta adds the Withings BeamO, read-only, with one sensor per person: **body temperature**, plus the time of the last measurement. It's built from a community report ([#1](https://github.com/pierosavi/withings-local/issues/1)) and **hasn't been tested with Home Assistant yet**, which is why it's a beta. If you own a BeamO, please try it and report back in [#1](https://github.com/pierosavi/withings-local/issues/1).
+
+To install it, open the integration in HACS, turn on its **Pre-release** switch (**⋮ → Redownload** also lets you pick a version), install the newest beta and restart. Setup works like the scale's, except for pairing: when asked, **take a temperature measurement** so the BeamO advertises. Don't use its QR-code setup mode, which is how the Withings app adds it to an account.
+
+What's known and what isn't:
+
+- Home Assistant never deletes or acknowledges anything on the BeamO. The Withings app is reported to delete readings after uploading them, so if your phone syncs first, Home Assistant misses that reading.
+- The BeamO's other values (skin temperature, the device's temperature, ECG and SpO₂) aren't shown.
+- Whether the BeamO announces new readings is unconfirmed. Until it is, Home Assistant checks a BeamO that advertises at most every 5 minutes, and at once when it asks for a sync.
+- Whether pairing Home Assistant affects your phone's connection to the BeamO is unknown.
+
+Useful in a report: a debug log (see [Troubleshooting](#troubleshooting)) covering a measurement, and the diagnostics download. Neither contains your key, but the log can contain the BeamO's Bluetooth address and Withings user IDs: replace them with `xx` before posting.
+
 ## Help add your device
 
 Other Withings scales and watches use the same Bluetooth protocol family, so adding one is mostly a matter of learning how it identifies itself and what it sends. If you own one, [open an issue](https://github.com/pierosavi/withings-local/issues) with the model name (as shown in the Withings app) and whichever of these you can get.

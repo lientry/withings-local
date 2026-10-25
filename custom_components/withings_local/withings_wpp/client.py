@@ -16,6 +16,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 
 from . import auth
 from .codec import DEVICE_REQUEST, Message, Reassembler, Tlv, WppError
+from .devices import BODY_SMART, DeviceProfile
 from .measures import MeasureGroup, merge_by_time, parse_groups
 from .messages import (
     Cmd,
@@ -28,13 +29,10 @@ from .messages import (
     battery_request,
     connect_reason_request,
     describe,
-    probe,
     stored_measure,
 )
 
 _LOGGER = logging.getLogger(__name__)
-WITH_MARKER = "-5749-5448-"
-CHAR_PREFIX = "00000024"
 ERR_UNSUPPORTED = -3
 SUBSCRIBE_TIMEOUT = 15.0
 WRITE_TIMEOUT = 10.0
@@ -54,10 +52,10 @@ class ScaleDisconnected(Exception):
     """The scale dropped the Bluetooth link mid-session."""
 
 
-def find_wpp_characteristic(client: BleakClient) -> BleakGATTCharacteristic:
+def find_wpp_characteristic(client: BleakClient, profile: DeviceProfile = BODY_SMART) -> BleakGATTCharacteristic:
     for service in client.services:
         for char in service.characteristics:
-            if char.uuid.startswith(CHAR_PREFIX) and WITH_MARKER in char.uuid:
+            if profile.is_wpp_characteristic(char.uuid.lower()):
                 return char
     raise LookupError("Withings WPP characteristic not found")
 
@@ -70,20 +68,21 @@ class Authenticated:
 
 
 class WppSession:
-    """Request/response over the single WPP characteristic.
+    """Request/response over the single WPP characteristic of a device with this `profile`.
 
-    `sync_ok` controls both SYNC_OK paths: sending one at the end of a read, and echoing one the
-    device sends as a request. Devices whose reaction to it is unknown should turn it off.
+    `sync_ok` (from the profile) controls both SYNC_OK paths: sending one at the end of a read,
+    and echoing one the device sends as a request.
     """
 
-    def __init__(self, client: BleakClient, trace=None, *, sync_ok: bool = True) -> None:
+    def __init__(self, client: BleakClient, trace=None, *, profile: DeviceProfile = BODY_SMART) -> None:
         self._client = client
-        self._char = find_wpp_characteristic(client)
+        self.profile = profile
+        self._char = find_wpp_characteristic(client, profile)
         self._reasm = Reassembler()
         self._inbox: asyncio.Queue[Message] = asyncio.Queue()
         self._trace = trace or (lambda direction, raw: None)
         self._disconnected = asyncio.Event()
-        self.sync_ok = sync_ok
+        self.sync_ok = profile.sync_ok
 
     def mark_disconnected(self) -> None:
         """Call from the client's disconnect callback: pending operations then fail at once."""
@@ -115,6 +114,10 @@ class WppSession:
                 "(the Bluetooth stack may be trying to pair with the scale)"
             ) from err
         _LOGGER.debug("subscribed")
+        if self.profile.settle_seconds:
+            # Let the messages some devices push after the subscription arrive; the first request
+            # then drops them instead of racing them.
+            await self._until_disconnect(asyncio.sleep(self.profile.settle_seconds), "waiting after subscribing")
 
     def _on_notify(self, _char, data: bytearray) -> None:
         self._trace("rx", bytes(data))
@@ -190,8 +193,11 @@ class ScaleClient:
 
     async def authenticate(self, kl: str) -> Authenticated:
         # The device answers a PROBE with PROBE_CHALLENGE, or with PROBE when it skips authentication.
+        # Devices that always challenge also push a PROBE on their own: don't take it as the answer.
+        profile = self.session.profile
         answers = {Cmd.PROBE, Cmd.PROBE_CHALLENGE}
-        (reply,) = await self.session.request(probe(), expect=answers)
+        first = {Cmd.PROBE_CHALLENGE} if profile.always_challenges else answers
+        (reply,) = await self.session.request(profile.probe(), expect=first)
         if reply.base_command == Cmd.PROBE:
             # Setup/button session: the scale didn't ask for authentication.
             return Authenticated(_probe_reply(reply), False, False)

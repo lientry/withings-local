@@ -3,16 +3,16 @@
     "flow_title": "{name}",
     "step": {
       "user": {
-        "description": "Pick your scale. If it isn't listed, step on it and try again: it only advertises right after a weigh-in.",
+        "description": "Pick your device. If it isn't listed, use it (step on the scale, or take a measurement) and try again: it only advertises right after a measurement.",
         "data": {
-          "address": "Scale"
+          "address": "Device"
         }
       },
       "bluetooth_confirm": {
-        "description": "Set up {name}? The scale must be in Bluetooth mode (see the documentation)."
+        "description": "Set up {name}? The device must be in Bluetooth mode (see the documentation)."
       },
       "key": {
-        "description": "The scale only shares measurements with clients that know its secret key (kl), which is stored in your Withings account.",
+        "description": "The {device} only shares measurements with clients that know its secret key (kl), which is stored in your Withings account.",
         "menu_options": {
           "login": "Fetch the key with my Withings login",
           "manual": "Enter the key myself"
@@ -26,14 +26,14 @@
         }
       },
       "manual": {
-        "description": "Paste the scale's kl key, for example from the project's fetch_kl tool.\n\nTo use your Withings login instead, leave the field empty and submit.",
+        "description": "Paste the {device}'s kl key, for example from the project's fetch_kl tool.\n\nTo use your Withings login instead, leave the field empty and submit.",
         "data": {
           "kl": "Key (kl)"
         }
       },
       "pair": {
-        "title": "Pair with the scale",
-        "description": "The scale only shares measurements over a paired Bluetooth connection, so Home Assistant has to pair with it once.\n\n1. **Hold the button under the scale for 3 seconds** (setup mode).\n2. Choose *Pair now*. The scale shows a 6-digit code, which you'll enter next.\n\nChoose *Skip* if this Home Assistant is already paired with the scale.",
+        "title": "Pair with the {device}",
+        "description": "The {device} only shares measurements over a paired Bluetooth connection, so Home Assistant has to pair with it once.\n\n1. {wake_up}.\n2. Choose *Pair now*. The {device} shows a 6-digit code, which you'll enter next.\n\nChoose *Skip* if this Home Assistant is already paired with the {device}.",
         "menu_options": {
           "pair_now": "Pair now",
           "pair_skip": "Skip (already paired)"
@@ -41,14 +41,14 @@
       },
       "passkey": {
         "title": "Enter the code",
-        "description": "Type the 6-digit code shown on the scale's display. You have about 30 seconds.",
+        "description": "Type the 6-digit code shown on the {device}'s display. You have about 30 seconds.",
         "data": {
           "passkey": "Code"
         }
       },
       "pair_failed": {
         "title": "Pairing failed",
-        "description": "Pairing didn't complete: {error}.\n\nHold the scale's button for 3 seconds and try again.",
+        "description": "Pairing didn't complete: {error}.\n\n{wake_up}, then try again.",
         "menu_options": {
           "pair_now": "Try again",
           "pair_skip": "Skip for now"
@@ -56,14 +56,14 @@
       },
       "pair_unsupported": {
         "title": "Pairing not possible here",
-        "description": "Home Assistant reaches the scale through an adapter that can't pair with a code: an ESPHome Bluetooth proxy, or a system other than Linux (macOS pairs by itself when the scale asks).\n\nYou can continue without pairing. If syncs fail later, make sure a Bluetooth adapter connected to this Home Assistant is close to the scale, then use Reconfigure to pair.",
+        "description": "Home Assistant reaches the {device} through an adapter that can't pair with a code: an ESPHome Bluetooth proxy, or a system other than Linux (macOS pairs by itself when the device asks).\n\nYou can continue without pairing. If syncs fail later, make sure a Bluetooth adapter connected to this Home Assistant is close to the {device}, then use Reconfigure to pair.",
         "menu_options": {
           "pair_skip": "Continue without pairing"
         }
       },
       "pair_timeout": {
-        "title": "The scale didn't show up",
-        "description": "No setup-mode signal from the scale within 90 seconds.\n\nHold the button under the scale for 3 seconds, then try again. Make sure your phone's Bluetooth is off so the Withings app doesn't grab the scale.",
+        "title": "The {device} didn't show up",
+        "description": "No advertisement from the {device} within 90 seconds.\n\n{wake_up}, then try again. Make sure your phone's Bluetooth is off so the Withings app doesn't grab the {device}.",
         "menu_options": {
           "pair_now": "Try again",
           "pair_skip": "Skip for now"
@@ -71,27 +71,27 @@
       },
       "reauth_confirm": {
         "title": "Pair {name} again",
-        "description": "The scale refused the connection because it isn't paired with this Home Assistant (for example after a battery change, or if the pairing was removed). Submit to pair again."
+        "description": "The device refused the connection because it isn't paired with this Home Assistant (for example after a battery change, or if the pairing was removed). Submit to pair again."
       }
     },
     "error": {
       "invalid_auth": "Withings rejected the email or password.",
-      "no_scale": "No Body Smart scale was found on this Withings account.",
+      "no_scale": "No device of this model was found on this Withings account.",
       "cannot_connect": "Could not reach Withings.",
       "invalid_key": "That doesn't look like a valid key.",
       "unknown": "Unexpected error.",
       "missing_credentials": "Enter both email and password, or leave both empty to go back.",
-      "invalid_passkey": "Enter the 6 digits shown on the scale."
+      "invalid_passkey": "Enter the 6 digits shown on the display."
     },
     "abort": {
-      "already_configured": "This scale is already configured.",
-      "no_devices_found": "No scale found. Step on it so it advertises, then try again.",
-      "not_supported": "This device isn't a supported Withings scale.",
-      "reconfigure_successful": "Done. The scale is set up again.",
-      "reauth_successful": "Done. The scale is paired again."
+      "already_configured": "This device is already configured.",
+      "no_devices_found": "No supported device found. Use it so it advertises (step on the scale, or take a measurement), then try again.",
+      "not_supported": "This Withings device isn't supported.",
+      "reconfigure_successful": "Done. The device is set up again.",
+      "reauth_successful": "Done. The device is paired again."
     },
     "progress": {
-      "wait_for_scale": "Hold the button under the scale for 3 seconds. When the scale shows a 6-digit code, the next step asks for it."
+      "wait_for_scale": "{wake_up}. When the {device} shows a 6-digit code, the next step asks for it."
     }
   },
   "entity": {
@@ -131,6 +131,12 @@
       },
       "measured_at": {
         "name": "Last weigh-in"
+      },
+      "body_temperature": {
+        "name": "Body temperature"
+      },
+      "last_measurement": {
+        "name": "Last measurement"
       },
       "last_sync": {
         "name": "Last sync"

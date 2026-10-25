@@ -1,12 +1,16 @@
 from datetime import UTC, datetime
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.withings_local.const import CONF_KL, CONF_USERS, DOMAIN, OPT_KNOWN_USERS
+from custom_components.withings_local.const import (
+    CONF_KL,
+    CONF_USERS,
+    DOMAIN,
+    OPT_KNOWN_USERS,
+)
 from custom_components.withings_local.coordinator import ScaleData, WeighIn
 
 from .conftest import ADDRESS, TEST_KL
@@ -53,7 +57,9 @@ async def test_per_user_sensors_appear_and_keep_values(hass: HomeAssistant, mock
     assert hass.states.get("sensor.body_smart_battery").state == "80"
     assert entry.options[OPT_KNOWN_USERS] == [ALICE, BOB]
 
-    from custom_components.withings_local.diagnostics import async_get_config_entry_diagnostics
+    from custom_components.withings_local.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
 
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert TEST_KL not in str(diag) and ADDRESS not in str(diag) and "Alice" not in str(diag)
@@ -97,4 +103,42 @@ async def test_address_title_is_renamed(hass: HomeAssistant, mock_bluetooth) -> 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.title == "Body Smart"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_beamo_gets_body_temperature(hass: HomeAssistant, mock_bluetooth) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=ADDRESS.lower(), title="BeamO", data={"address": ADDRESS, CONF_KL: TEST_KL, "model": 71}
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    when = datetime(2026, 1, 2, 7, 30, tzinfo=UTC)
+    _sync(entry, {ALICE: WeighIn(when, {"body_temperature": 36.7, "skin_temperature": 35.1})})
+    await hass.async_block_till_done()
+    temp = hass.states.get("sensor.beamo_user_1_body_temperature")
+    assert float(temp.state) == 36.7 and temp.attributes["unit_of_measurement"] == "°C"
+    assert hass.states.get("sensor.beamo_user_1_last_measurement").state == "2026-01-02T07:30:00+00:00"
+    assert hass.states.get("sensor.beamo_user_1_weight") is None
+    assert hass.states.get("sensor.beamo_user_1_skin_temperature") is None
+    from homeassistant.helpers import device_registry as dr
+
+    registry = dr.async_get(hass)
+    device = registry.async_get(dr.async_get_device_id_by_identifier(hass, (DOMAIN, ADDRESS), config_entry_id=entry.entry_id))
+    assert device.model == "BeamO"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_diagnostics_hide_an_address_used_as_name(hass: HomeAssistant, mock_bluetooth) -> None:
+    from custom_components.withings_local.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    from .conftest import service_info
+
+    entry = await _setup(hass)
+    entry.runtime_data._last_service_info = service_info(name=ADDRESS)  # noqa: SLF001
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag["last_advertisement"]["name_prefix"] == ""
+    assert ADDRESS[:8] not in str(diag)
     assert await hass.config_entries.async_unload(entry.entry_id)

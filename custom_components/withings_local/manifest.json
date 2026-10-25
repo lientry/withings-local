@@ -9,6 +9,10 @@
     {
       "connectable": true,
       "local_name": "Body Smart*"
+    },
+    {
+      "connectable": true,
+      "service_data_uuid": "0000fd77-0000-1000-8000-00805f9b34fb"
     }
   ],
   "codeowners": [
@@ -27,5 +31,5 @@
     "bleak_retry_connector"
   ],
   "requirements": [],
-  "version": "0.3.3"
+  "version": "0.4.0b1"
 }

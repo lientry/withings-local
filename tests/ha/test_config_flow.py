@@ -31,7 +31,7 @@ async def test_bluetooth_discovery_manual_key(hass: HomeAssistant, mock_bluetoot
     with patch("custom_components.withings_local.async_setup_entry", return_value=True):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "pair_skip"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == {"address": ADDRESS, CONF_KL: TEST_KL}
+    assert result["data"] == {"address": ADDRESS, CONF_KL: TEST_KL, "model": 16}
     assert result["result"].unique_id == ADDRESS.lower()
 
 
@@ -231,3 +231,42 @@ async def test_reauth_pairs_again(hass: HomeAssistant, mock_bluetooth) -> None:
     with patch("custom_components.withings_local.async_setup_entry", return_value=True):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"passkey": "654321"})
     assert result["type"] is FlowResultType.ABORT and result["reason"] == "reauth_successful"
+
+
+async def test_beamo_discovery_creates_beamo_entry(hass: HomeAssistant, mock_bluetooth) -> None:
+    from .conftest import beamo_info
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=beamo_info())
+    assert result["step_id"] == "bluetooth_confirm" and result["description_placeholders"] == {"name": "BeamO"}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "login"})
+    with patch(FETCH, return_value=(TEST_KL, {})) as fetch:
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"email": "user@example.com", "password": "pw"})
+    assert fetch.call_args.args[-1] == 71  # the BeamO's key, not a scale's
+    assert result["step_id"] == "pair" and "temperature measurement" in result["description_placeholders"]["wake_up"]
+    with patch("custom_components.withings_local.async_setup_entry", return_value=True):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "pair_skip"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "BeamO" and result["data"]["model"] == 71
+
+
+async def test_beamo_pairs_on_any_advertisement(hass: HomeAssistant, mock_bluetooth) -> None:
+    """Not only in setup mode: that's the QR code the Withings app adds it to an account with."""
+    from .conftest import BEAMO_INSTALLED, beamo_info
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=beamo_info())
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "manual"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_KL: TEST_KL})
+
+    def fake_register(hass, callback, address):
+        info = beamo_info(BEAMO_INSTALLED)
+        info.time = 1e12
+        hass.loop.call_soon(callback, info)
+        return lambda: None
+
+    session = FakeSession()
+    patches = _pairing_patches(session)
+    patches = (patch("custom_components.withings_local.config_flow.bluetooth.async_register_advertisement_callback", fake_register), *patches[1:])
+    result = await _run_pair_now(hass, result, patches)
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "passkey"

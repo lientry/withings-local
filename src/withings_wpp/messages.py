@@ -48,6 +48,7 @@ class Obj:
     TIME_SET = 1281
     TIME_SET_REPLY = 1282
     APP_PROBE_OS_VERSION = 2344
+    CHALLENGE_REQUEST = 2422  # 0x0976, 1 = "challenge me"; sent by the app to the BeamO
 
 
 class MeasureAction:
@@ -66,8 +67,9 @@ COMMAND_NAMES = {v: k for k, v in vars(Cmd).items() if not k.startswith("_")}
 OBJECT_NAMES = {v: k for k, v in vars(Obj).items() if not k.startswith("_")}
 ERROR_CODES = {-2: "busy", -3: "unsupported", -4: "rejected", -5: "not authenticated", -8: "invalid arguments", -9: "arguments not set"}
 
-# AppProbe identifies the client: os 1 = Android, app 1 = the Withings phone app.
+# AppProbe identifies the client: os 1 = Android, 2 = iOS; app 1 = the Withings phone app.
 OS_ANDROID = 1
+OS_IOS = 2
 APP_WITHINGS = 1
 APP_VERSION = 202609240  # value current app versions send
 ANDROID_API_LEVEL = 34
@@ -79,6 +81,18 @@ def probe(app_version: int = APP_VERSION, os_version: int = ANDROID_API_LEVEL) -
         (
             Tlv(Obj.APP_PROBE, struct.pack(">BBI", OS_ANDROID, APP_WITHINGS, app_version)),
             Tlv(Obj.APP_PROBE_OS_VERSION, struct.pack(">H", os_version)),
+        ),
+    )
+
+
+def beamo_probe(app_version: int = APP_VERSION) -> Message:
+    """The PROBE reported to work on a BeamO (issue #1), byte for byte: an iOS AppProbe and a
+    challenge request. A PROBE without the request is untested there."""
+    return Message(
+        Cmd.PROBE,
+        (
+            Tlv(Obj.APP_PROBE, struct.pack(">BBI", OS_IOS, APP_WITHINGS, app_version)),
+            Tlv(Obj.CHALLENGE_REQUEST, b"\x01"),
         ),
     )
 

@@ -1,6 +1,7 @@
 """WppSession against a fake Bluetooth client: timeouts must turn hangs into errors."""
 
 import asyncio
+import dataclasses
 import struct
 from types import SimpleNamespace
 
@@ -9,7 +10,8 @@ import pytest
 from withings_wpp import auth
 from withings_wpp import client as wpp_client
 from withings_wpp.codec import Message, Tlv, pack_str
-from withings_wpp.messages import Cmd, MeasureAction, Obj
+from withings_wpp.devices import BEAMO, BODY_SMART
+from withings_wpp.messages import Cmd, MeasureAction, Obj, probe
 
 CHAR = SimpleNamespace(uuid="00000024-5749-5448-0010-000000000000")
 
@@ -99,14 +101,14 @@ async def test_hanging_write_times_out(monkeypatch):
     session = wpp_client.WppSession(FakeClient(hang_write=True))
     await session.start()
     with pytest.raises(TimeoutError):
-        await session.send(wpp_client.probe())
+        await session.send(probe())
 
 
 async def test_missing_reply_times_out():
     session = wpp_client.WppSession(FakeClient())
     await session.start()
     with pytest.raises(TimeoutError):
-        await session.request(wpp_client.probe(), timeout=0.05)
+        await session.request(probe(), timeout=0.05)
 
 
 async def test_disconnect_fails_pending_subscribe_immediately():
@@ -122,7 +124,7 @@ async def test_disconnect_fails_pending_reply_immediately():
     await session.start()
     asyncio.get_running_loop().call_later(0.01, session.mark_disconnected)
     with pytest.raises(wpp_client.ScaleDisconnected, match="reply"):
-        await session.request(wpp_client.probe(), timeout=1)
+        await session.request(probe(), timeout=1)
 
 
 async def test_unsolicited_startup_messages_dont_answer_requests():
@@ -158,7 +160,7 @@ async def test_unverified_device_gets_no_further_commands():
 
 async def test_sync_ok_policy_covers_both_directions():
     ble = FakeScale()
-    session = wpp_client.WppSession(ble, sync_ok=False)
+    session = wpp_client.WppSession(ble, profile=dataclasses.replace(BODY_SMART, sync_ok=False))
     await wpp_client.read_measurements(ble, KL, session)
     ble.push(Message(Cmd.SYNC_OK | wpp_client.DEVICE_REQUEST))
     await asyncio.sleep(0.01)  # the answer goes out from a background task
@@ -175,3 +177,56 @@ async def test_sync_ok_is_sent_by_default():
 
 def stored_actions(ble):
     return [m.find(Obj.STORED_MEASURE_ACTION)[0].value[0] for m in ble.sent if m.command == Cmd.STORED_MEASURE]
+
+
+# Reported: startup messages, sometimes with an early challenge of their own.
+BEAMO_STARTUP = (*STARTUP, Message(Cmd.PROBE_CHALLENGE, (Tlv(Obj.PROBE_CHALLENGE, pack_str(MAC) + pack_str(bytes(16))),)))
+BEAMO_CHAR = SimpleNamespace(uuid="00000004-0000-5749-5448-494e47530000")
+
+
+class FakeBeamO(FakeScale):
+    """Two Withings characteristics; only 0004 speaks WPP. Pushes its startup messages a little
+    after the subscription, and only answers the PROBE that asks for a challenge."""
+
+    def __init__(self, startup=BEAMO_STARTUP, startup_delay=0.02, **kwargs):
+        super().__init__(**kwargs)
+        self.startup = startup
+        other = SimpleNamespace(uuid="00000005-0000-5749-5448-494e47530000")
+        self.services = [SimpleNamespace(characteristics=[other, BEAMO_CHAR])]
+        self.startup_delay = startup_delay
+
+    def push(self, msg):
+        self._notify(BEAMO_CHAR, bytearray(msg.encode()))
+
+    async def start_notify(self, char, callback):
+        assert char is BEAMO_CHAR
+        self._notify = callback
+        for msg in self.startup:
+            asyncio.get_running_loop().call_later(self.startup_delay, self.push, msg)
+
+    def answer(self, msg):
+        if msg.command == Cmd.PROBE and not msg.find(Obj.CHALLENGE_REQUEST):
+            return []
+        return super().answer(msg)
+
+
+async def test_beamo_session_waits_out_startup_messages():
+    ble = FakeBeamO()
+    session = wpp_client.WppSession(ble, profile=dataclasses.replace(BEAMO, settle_seconds=0.05))
+    result = await wpp_client.read_measurements(ble, KL, session)
+    assert result.authenticated and result.scale_verified
+    assert ble.sent[0].encode() == BEAMO.probe().encode()
+    assert Cmd.SYNC_OK not in [m.base_command for m in ble.sent]
+    assert stored_actions(ble) == [MeasureAction.GET_STATE]  # never DELETE_ALL
+
+
+async def test_beamo_startup_probe_isnt_taken_as_the_answer():
+    # A late startup PROBE arrives while we wait for the challenge: it's ignored, not taken as
+    # "no authentication needed".
+    ble = FakeBeamO(startup=())
+    session = wpp_client.WppSession(ble, profile=dataclasses.replace(BEAMO, settle_seconds=0))
+    await session.start()
+    answer = ble.answer
+    ble.answer = lambda msg: ([STARTUP[0]] if msg.command == Cmd.PROBE else []) + answer(msg)
+    result = await wpp_client.ScaleClient(session).authenticate(KL)
+    assert result.authenticated and result.scale_verified

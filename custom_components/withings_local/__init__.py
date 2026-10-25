@@ -1,4 +1,4 @@
-"""Withings Local: read a Withings Body Smart scale over Bluetooth, without the cloud."""
+"""Withings Local: read a Withings Body Smart scale (or, in beta, a BeamO) over Bluetooth, without the cloud."""
 
 from __future__ import annotations
 
@@ -6,18 +6,19 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from .const import DOMAIN, LOCAL_NAME_PREFIX
-from .coordinator import WithingsLocalConfigEntry, WithingsScaleCoordinator
+from .const import DOMAIN
+from .coordinator import WithingsLocalConfigEntry, WithingsScaleCoordinator, entry_profile
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WithingsLocalConfigEntry) -> bool:
-    """Set up a scale. It only advertises after a weigh-in, so don't require it to be in range now."""
+    """Set up a device. It only advertises after a measurement, so don't require it to be in range now."""
     _remove_single_user_entities(hass, entry)
+    profile = entry_profile(entry)
     if entry.title.replace("-", ":").upper() == entry.data["address"].upper():
         # Set up before 0.2.1 from an advertisement without a name: use a readable title.
-        hass.config_entries.async_update_entry(entry, title=LOCAL_NAME_PREFIX)
+        hass.config_entries.async_update_entry(entry, title=profile.name)
     coordinator = WithingsScaleCoordinator(hass, entry)
     entry.runtime_data = coordinator
     # Register the scale first: the per-user devices link to it with via_device_id.
@@ -28,8 +29,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WithingsLocalConfigEntry
         connections={(dr.CONNECTION_BLUETOOTH, address)},
         name=entry.title,
         manufacturer="Withings",
-        model="Body Smart",
-        model_id="WBS13",
+        model=profile.name,
+        model_id=profile.model_code,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(coordinator.async_start())

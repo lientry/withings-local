@@ -8,9 +8,16 @@ from homeassistant.components import bluetooth
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import format_mac
 
 from .const import CONF_KL, CONF_USERS
-from .coordinator import WITHINGS_COMPANY_ID, WithingsLocalConfigEntry, has_new_data
+from .coordinator import (
+    WITHINGS_COMPANY_ID,
+    WithingsLocalConfigEntry,
+    fd77,
+    has_new_data,
+    sync_requested,
+)
 
 TO_REDACT = {CONF_KL, CONF_ADDRESS, CONF_USERS}
 
@@ -19,8 +26,11 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Withing
     coordinator = entry.runtime_data
     info = coordinator._last_service_info  # noqa: SLF001 - the coordinator keeps the last advertisement here
     data = coordinator.data
+    profile = coordinator.profile
+    fd = None if info is None else fd77(info, profile)
     return {
         "entry": async_redact_data(dict(entry.data), TO_REDACT),
+        "device": profile.name,
         "bluetooth": {
             "scanners_connectable": bluetooth.async_scanner_count(hass, connectable=True),
             "scanners_total": bluetooth.async_scanner_count(hass, connectable=False),
@@ -29,14 +39,20 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Withing
         "last_advertisement": None
         if info is None
         else {
-            "name_prefix": (info.name or "")[:10],
+            # Without a local name HA reports the address as the name: don't leak it.
+            "name_prefix": "" if format_mac(info.name or "") == format_mac(info.address) else (info.name or "")[:10],
             "source": info.source,
             "rssi": info.rssi,
             "connectable": info.connectable,
             "service_uuid_count": len(info.service_uuids),
             "withings_uuid_present": any("-5749-5448-" in u for u in info.service_uuids),
             "withings_manufacturer_data_present": WITHINGS_COMPANY_ID in info.manufacturer_data,
-            "new_data": has_new_data(info),
+            # Flags only: other FD77 fields can hold the MAC.
+            "fd77": None
+            if fd is None
+            else {"installed": fd.installed, "sync_requested": fd.sync_requested, "fields": sorted(fd.fields)},
+            "new_data": has_new_data(info, profile),
+            "sync_requested": sync_requested(info, profile),
         },
         "last_poll_successful": coordinator.last_poll_successful,
         "users": [
