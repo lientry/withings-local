@@ -116,6 +116,15 @@ What's known and what isn't:
 - Whether the BeamO announces new readings is unconfirmed. Until it is, Home Assistant checks a BeamO that advertises at most every 5 minutes, and at once when it asks for a sync.
 - Whether pairing Home Assistant affects your phone's connection to the BeamO is unknown.
 
+To test the same Bluetooth client on macOS without Home Assistant, run these from a checkout:
+
+```bash
+uv run tools/fetch_kl.py --beamo
+uv run tools/read_measurements.py
+```
+
+The first command replaces the CLI's saved device key with the BeamO's key. Turn off your phone's Bluetooth, then take a temperature measurement while the second command waits. Allow Bluetooth access for your terminal and complete any macOS pairing prompt. The raw exchange saved under `captures/ble/` contains identifiers and health data; don't post it.
+
 Useful in a report: a debug log (see [Troubleshooting](#troubleshooting)) covering a measurement, and the diagnostics download. Neither contains your key, but the log can contain the BeamO's Bluetooth address and Withings user IDs: replace them with `xx` before posting.
 
 ## Help add your device

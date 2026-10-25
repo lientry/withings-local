@@ -68,6 +68,8 @@ async def main() -> None:
                 print(f"  connect reason: {reason} ({REASONS.get(reason, '?')})", flush=True)
             except WppCommandError as e:
                 print(f"  connect reason refused: {e}")
+            except TimeoutError:
+                print("  connect reason timed out; continuing with stored measurements")
             status = await scale.measure_status()
             print(f"  stored measurement groups: {status.count}", flush=True)
             groups = merge_by_time(await scale.measures()) if status.count > 0 else []

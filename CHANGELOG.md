@@ -15,6 +15,9 @@ This is a beta: HACS offers it only if you turn on the integration's **Pre-relea
 ### Changed
 - Setup and messages say "device" where they no longer mean only the scale. Existing scale setups are unchanged.
 
+### Fixed
+- The CLI continues reading stored measurements if the optional connection-reason query times out, matching the library's behavior.
+
 ## [0.3.3] - 2026-10-24
 
 ### Changed
