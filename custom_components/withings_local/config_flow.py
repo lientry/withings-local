@@ -45,7 +45,9 @@ def is_body_smart(info: BluetoothServiceInfoBleak) -> bool:
     return any((w := WithingsUuid.parse(u)) and w.model_id == BODY_SMART_MODEL_ID for u in info.service_uuids)
 
 
-async def fetch_kl(hass, email: str, password: str, address: str) -> tuple[str, dict[str, str]]:
+async def fetch_kl(
+    hass, email: str, password: str, address: str, model_id: int, identity_mac: str | None
+) -> tuple[str, dict[str, str]]:
     """Log in to the Withings account; return the scale's kl and {user id: first name}.
 
     Credentials are used once and not stored. User names are optional: failure to list them
@@ -61,10 +63,31 @@ async def fetch_kl(hass, email: str, password: str, address: str) -> tuple[str, 
     session = account.parse_login(await post(account.LOGIN_URL, account.login_params(email, password)))
     users: dict[str, str] = {}
     try:
-        scales = account.parse_scales(await post(account.ASSOCIATION_URL, account.association_params(session)))
-        if scales and scales[0].accountid:
+        try:
+            account_id = account.parse_account_id(
+                await post(account.ACCOUNT_URL, account.account_params(session)), email
+            )
+        except account.AccountError as err:
+            # An error code or a missing/ambiguous account ID is safe to log.
+            # Never log the response, session, email, or account ID.
+            _LOGGER.warning("Withings account ID lookup failed: %s", err)
+            raise
+        association_response = await post(account.ASSOCIATION_URL, account.association_params(session, account_id))
+        try:
+            scales = account.parse_scales(association_response, model=None)
+            selected = account.select_scale(scales, model=model_id, address=address, identity_mac=identity_mac)
+        except account.AccountError as err:
+            _LOGGER.warning(
+                "Withings account key lookup failed (%s); sanitized association structure: %s",
+                err,
+                account.association_diagnostics(
+                    association_response, address=address, identity_mac=identity_mac
+                ),
+            )
+            raise
+        if selected.accountid:
             try:
-                names = account.parse_users(await post(account.ACCOUNT_URL, account.users_params(session, scales[0].accountid)))
+                names = account.parse_users(await post(account.ACCOUNT_URL, account.users_params(session, selected.accountid)))
                 users = {str(uid): name for uid, name in names.items()}
             except (account.AccountError, aiohttp.ClientError, TimeoutError):
                 _LOGGER.debug("Could not list Withings users; names will be generic", exc_info=True)
@@ -73,11 +96,7 @@ async def fetch_kl(hass, email: str, password: str, address: str) -> tuple[str, 
             await post(account.LOGIN_URL, account.logout_params(session))
         except (aiohttp.ClientError, TimeoutError):
             _LOGGER.debug("Withings logout failed", exc_info=True)
-    if not scales:
-        raise account.AccountError("no Body Smart on this account")
-    # On Linux the Bluetooth address is the scale's MAC; prefer the matching association.
-    kl = next((s.kl for s in scales if s.mac and format_mac(s.mac) == format_mac(address)), scales[0].kl)
-    return kl, users
+    return selected.kl, users
 
 
 class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -89,6 +108,8 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
         self._address: str | None = None
         self._name: str | None = None
         self._discovered: dict[str, str] = {}
+        self._model_id = BODY_SMART_MODEL_ID
+        self._identity_mac: str | None = None
         self._kl: str | None = None
         self._users: dict[str, str] | None = None
         self._pair_task: asyncio.Task | None = None
@@ -150,7 +171,9 @@ class WithingsLocalConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "missing_credentials"
         if user_input is not None and not errors:
             try:
-                kl, users = await fetch_kl(self.hass, email, password, self._address)
+                kl, users = await fetch_kl(
+                    self.hass, email, password, self._address, self._model_id, self._identity_mac
+                )
             except account.InvalidCredentials:
                 errors["base"] = "invalid_auth"
             except account.AccountError:

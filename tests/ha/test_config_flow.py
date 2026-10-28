@@ -6,9 +6,9 @@ from homeassistant.config_entries import SOURCE_BLUETOOTH
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.withings_local.const import CONF_KL, DOMAIN
+from custom_components.withings_local.const import BODY_MODEL_ID, CONF_KL, DOMAIN
 
-from .conftest import ADDRESS, TEST_KL, service_info
+from .conftest import ADDRESS, TEST_KL, WBS06_ADDRESS, WBS06_IDENTITY, service_info
 
 FETCH = "custom_components.withings_local.config_flow.fetch_kl"
 
@@ -60,6 +60,65 @@ async def test_discovery_of_other_device_aborts(hass: HomeAssistant, mock_blueto
     info = service_info(name="Something else", uuid="0000180f-0000-1000-8000-00805f9b34fb")
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=info)
     assert result["type"] is FlowResultType.ABORT and result["reason"] == "not_supported"
+
+async def test_wbs06_fetch_key_selects_account_mac_and_logs_out(hass: HomeAssistant) -> None:
+    """A second WBS06 on the account must not supply the key for this scale."""
+    from custom_components.withings_local.config_flow import fetch_kl
+
+    class Response:
+        def __init__(self, data):
+            self.data = data
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def raise_for_status(self):
+            return None
+
+        async def json(self, **_kwargs):
+            return self.data
+
+    class Http:
+        def __init__(self):
+            self.actions = []
+
+        def post(self, url, data, timeout):
+            self.actions.append((url, data["action"]))
+            if data["action"] == "login":
+                return Response({"status": 0, "body": {"sessionid": "synthetic-session"}})
+            if data["action"] == "get":
+                return Response({"status": 0, "body": {"account": [
+                    {"id": 1, "email": "other@example.com"},
+                    {"id": 42, "email": "user@example.com"},
+                ]}})
+            if data["action"] == "getbyaccountid":
+                assert data["accountid"] == 42
+                return Response({
+                    "status": 0,
+                    "body": {
+                        "associations": [
+                            {"accountid": 1, "kl": "wrong-scale", "deviceproperties": {"model": 7, "macaddress": "00:11:22:33:44:55"}},
+                            {"accountid": 2, "kl": "right-scale", "deviceproperties": {"model": 7, "macaddress": WBS06_IDENTITY}},
+                        ]
+                    },
+                })
+            if data["action"] == "getuserslist":
+                assert data["accountid"] == 2
+                return Response({"status": 0, "body": {"users": [{"id": 99, "firstname": "Alice"}]}})
+            assert data["action"] == "logout"
+            return Response({"status": 0})
+
+    http = Http()
+    with patch("custom_components.withings_local.config_flow.async_get_clientsession", return_value=http):
+        kl, users = await fetch_kl(hass, "user@example.com", "test", WBS06_ADDRESS, BODY_MODEL_ID, WBS06_IDENTITY)
+    assert kl == "right-scale"
+    assert users == {"99": "Alice"}
+    assert http.actions[1] == (account.ACCOUNT_URL, "get")
+    assert http.actions[2] == (account.ASSOCIATION_URL, "getbyaccountid")
+    assert http.actions[-1] == (account.LOGIN_URL, "logout")
 
 
 async def test_empty_submit_goes_back_to_key_options(hass: HomeAssistant, mock_bluetooth) -> None:
